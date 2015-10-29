@@ -11,7 +11,6 @@ from pycalphad.core.utils import unpack_condition, unpack_phases
 from pycalphad import calculate, Model
 from pycalphad.constraints import mole_fraction
 from pycalphad.core.lower_convex_hull import lower_convex_hull
-import pycalphad.core.theano_utils
 from pycalphad.core.theano_utils import theano_code
 from sympy import Add, Mul, Symbol
 import theano
