@@ -41,7 +41,7 @@ MIN_SITE_FRACTION = 1e-16
 # initial value of 'alpha' in Newton-Raphson procedure
 INITIAL_STEP_SIZE = 1.
 
-PhaseRecord = namedtuple('PhaseRecord', ['variables', 'grad', 'plane_grad', 'plane_hess'])
+PhaseRecord = namedtuple('PhaseRecord', ['variables', 'points_var', 'grad', 'plane_grad', 'plane_hess'])
 
 class EquilibriumError(Exception):
     "Exception related to calculation of equilibrium"
@@ -109,18 +109,36 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
         undefs = list(out.atoms(Symbol) - out.atoms(v.StateVariable))
         for undef in undefs:
             out = out.xreplace({undef: float(0)})
-        num_points = theano.shared(17)
+        # This symbolic variable will be used to set the number of points in an array each iteration
+        # This resolves an issue with broadcasting and the grad operator in Theano graphs
+        num_points = theano.shared(0)
         dims = tuple(len(i) for i in indep_vals) + (num_points,)
-        code = partial(theano_code, dims=dims)
-        import sympy.printing.theanocode
-        pure_code = partial(sympy.printing.theanocode.theano_code, broadcastables=defaultdict(lambda: [False]*len(dims)))
-        tinputs = list(map(pure_code, variables))
-        tinputs_rep = list(map(code, variables))
-        toutputs = list(map(code, [out]))
+        broadcast_dims = {}
+        broadcast_dims[v.T] = (True, False, True)
+        broadcast_dims[v.P] = (False, True, True)
+        for s in site_fracs:
+            broadcast_dims[s] = (False, False, False)
+        # All this theano_cache nonsense is necessary because we have to make sure our symbolic variables are
+        # exactly the same copy as what appears in the graph, or else Theano will say it's disconnected
+        theano_cache = {}
+        for s in variables:
+            def_key = (s.name, 'floatX', broadcast_dims[s], type(s), False)
+            alloc_key = (s.name, 'floatX', broadcast_dims[s], type(s), True)
+            theano_cache[def_key] = tt.tensor(name=s.name, dtype='floatX', broadcastable=broadcast_dims[s])
+            theano_cache[alloc_key] = tt.alloc(*itertools.chain([theano_cache[def_key]], dims))
+        code = partial(theano_code, cache=theano_cache, broadcastables=broadcast_dims, dims=dims, alloc=True)
+        tinputs_alloc = [theano_cache[(s.name, 'floatX', broadcast_dims[s], type(s), True)] for s in variables]
+        tinputs = [theano_cache[(s.name, 'floatX', broadcast_dims[s], type(s), False)] for s in variables]
+        # Don't force us to have shape information for the objective function
+        # It's only necessary for the gradient to broadcast correctly
+        obj_code = partial(theano_code, cache=theano_cache, broadcastables=broadcast_dims, dims=dims, alloc=False)
+        toutputs = list(map(obj_code, [out]))
         toutputs = toutputs[0] if len(toutputs) == 1 else toutputs
         callable_dict[name] = theano.function(tinputs, toutputs, mode='FAST_COMPILE', on_unused_input='warn')
-        jac = tt.grad(toutputs.sum(), tinputs_rep, disconnected_inputs='ignore')
-        grad_callable_dict[name] = theano.function(tinputs, jac, mode='FAST_RUN', on_unused_input='warn')
+        toutputs = list(map(code, [out]))
+        toutputs = toutputs[0] if len(toutputs) == 1 else toutputs
+        jac = theano.grad(toutputs.sum(), tinputs_alloc, disconnected_inputs='warn')
+        grad_callable_dict[name] = theano.function(tinputs, jac, mode='FAST_COMPILE', on_unused_input='warn')
 
         # Adjust gradient by the approximate chemical potentials
         hyperplane = Add(*[v.MU(i)*mole_fraction(dbf.phases[name], comps, i)
@@ -132,15 +150,27 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             plane_broadcast_dims[v.MU(i)] = (False,) * len(conds.values()) + (True,)  # extra 'vertex' dim
         for i in site_fracs:
             plane_broadcast_dims[i] = (False,) * (len(conds.values())+1)
-        code = partial(theano_code, broadcastables=plane_broadcast_dims)
+        plane_dims = tuple(len(i) for i in conds.values()) + (len(components),)
+        plane_vars = [v.MU(i) for i in comps if i != 'VA'] + site_fracs
+        plane_theano_cache = {}
+        for s in plane_vars:
+            def_key = (s.name, 'floatX', plane_broadcast_dims[s], type(s), False)
+            alloc_key = (s.name, 'floatX', plane_broadcast_dims[s], type(s), True)
+            plane_theano_cache[def_key] = tt.tensor(name=s.name, dtype='floatX', broadcastable=plane_broadcast_dims[s])
+            plane_theano_cache[alloc_key] = tt.alloc(*itertools.chain([plane_theano_cache[def_key]], plane_dims))
+        code = partial(theano_code, cache=plane_theano_cache, dims=plane_dims,
+                       broadcastables=plane_broadcast_dims, alloc=True)
         toutputs = list(map(code, [hyperplane]))
         toutputs = toutputs[0] if len(toutputs) == 1 else toutputs
-        plane_dof = list(map(code, [v.MU(i) for i in comps if i != 'VA'] + site_fracs))
-        jac = tt.jacobian(toutputs.flatten(), plane_dof, disconnected_inputs='warn')
-        plane_grad = theano.function(plane_dof, jac, mode='FAST_RUN', on_unused_input='warn')
+
+        plane_dof_alloc = [plane_theano_cache[(s.name, 'floatX', plane_broadcast_dims[s], type(s), True)] for s in plane_vars]
+        plane_dof = [plane_theano_cache[(s.name, 'floatX', plane_broadcast_dims[s], type(s), False)] for s in plane_vars]
+        jac = tt.grad(toutputs.sum(), plane_dof_alloc, disconnected_inputs='warn')
+        plane_grad = theano.function(plane_dof, jac, mode='FAST_COMPILE', on_unused_input='warn')
         # TODO: FIX THIS IS WRONG DO NOT COMMIT
         plane_hess = lambda *args: 0. #hessian(toutputs, tinputs, disconnected_inputs='warn')
         phase_records[name.upper()] = PhaseRecord(variables=variables,
+                                                  points_var=num_points,
                                                   grad=grad_callable_dict[name],
                                                   plane_grad=plane_grad,
                                                   plane_hess=plane_hess)
@@ -266,28 +296,34 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
 
             # Theano functions require the same number of dimensions for variables as initially defined
             # It's easier to flatten and reshape after the fact
+            #print('points.shape', points.shape)
             flattened_points = points.reshape(points.shape[:len(indep_vals)] + (-1, points.shape[-1]))
+            #print('flattened_points.shape', flattened_points.shape)
+            # This value will propagate through the Theano graphs so all the alloc() calls work
+            phase_records[name].points_var.set_value(flattened_points.shape[-2])
             grad_args = itertools.chain([i[..., None] for i in statevar_grid],
                                         [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
-            grad = phase_records[name].grad(*grad_args)
-            # Reduce axes created by Theano
-            grad = np.array([np.sum(i, axis=tuple(range(len(i.shape)))[1:]).reshape(properties.points.shape)
-                             for i in grad])
+            grad = np.array(phase_records[name].grad(*grad_args), dtype=np.float)
+            #print(grad)
             # Send 'gradient' axis to back
             trx = tuple(range(len(grad.shape)))
             grad = grad.transpose(trx[1:] + (trx[0],))
-
+            #print('before reshape', grad.shape)
+            grad.shape = points.shape[:-1] + (grad.shape[-1],)
+            #print('after reshape', grad.shape)
+            #print([properties.MU.values[..., i][..., None].shape for i in range(properties.MU.shape[-1])])
+            #print([points[..., i].shape for i in range(points.shape[-1])])
             plane_args = itertools.chain([properties.MU.values[..., i][..., None] for i in range(properties.MU.shape[-1])],
                                          [points[..., i] for i in range(points.shape[-1])])
-            cast_grad = plane_grad(*plane_args)
-            # Reduce axes created by Theano
-            cast_grad = np.array([np.sum(i, axis=tuple(range(len(i.shape)))[1:]).reshape(properties.MU.shape)
-                                  for i in cast_grad])
+            cast_grad = np.array(plane_grad(*plane_args), dtype=np.float)
             # Send 'gradient' axis to back
             trx = tuple(range(len(cast_grad.shape)))
             cast_grad = cast_grad.transpose(trx[1:] + (trx[0],))
+            #print('cast_grad.shape', cast_grad.shape)
 
             grad = grad - cast_grad
+            #print(grad)
+            #print(grad.shape)
             # This Hessian is an approximation updated using the BFGS method
             # See Nocedal and Wright, ch.3, p. 198
             # Initialize as identity matrix
@@ -320,22 +356,20 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 new_points[new_points == 0.] = 1e-16
                 # BFGS update to Hessian
                 flattened_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
+                # This value will propagate through the Theano graphs so all the alloc() calls work
+                phase_records[name].points_var.set_value(flattened_points.shape[-2])
                 grad_args = itertools.chain([i[..., None] for i in statevar_grid],
                                             [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
-                new_grad = phase_records[name].grad(*grad_args)
-                # Reduce axes created by Theano
-                new_grad = np.array([np.sum(i, axis=tuple(range(len(i.shape)))[1:]).reshape(properties.points.shape)
-                                 for i in new_grad])
+                new_grad = np.array(phase_records[name].grad(*grad_args), dtype=np.float)
+
                 # Send 'gradient' axis to back
                 trx = tuple(range(len(new_grad.shape)))
                 new_grad = new_grad.transpose(trx[1:] + (trx[0],))
+                new_grad.shape = new_points.shape[:-1] + (new_grad.shape[-1],)
 
                 plane_args = itertools.chain([properties.MU.values[..., i][..., None] for i in range(properties.MU.shape[-1])],
                                              [new_points[..., i] for i in range(new_points.shape[-1])])
-                cast_grad = plane_grad(*plane_args)
-                # Reduce axes created by Theano
-                cast_grad = np.array([np.sum(i, axis=tuple(range(len(i.shape)))[1:]).reshape(properties.MU.shape)
-                                      for i in cast_grad])
+                cast_grad = np.array(plane_grad(*plane_args), dtype=np.float)
                 # Send 'gradient' axis to back
                 trx = tuple(range(len(cast_grad.shape)))
                 cast_grad = cast_grad.transpose(trx[1:] + (trx[0],))
@@ -361,7 +395,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                     # Skip Hessian updates where step was too small to compute update
                     update[tiny_step_filter] = 0
                     hess = hess - update
-                    cast_hess = plane_hess(*plane_args)
+                    cast_hess = np.array(plane_hess(*plane_args), dtype=np.float)
                     cast_hess = -cast_hess + hess
                     hess = -cast_hess.astype(np.float, copy=False) #TODO: Why does this fix things?
 

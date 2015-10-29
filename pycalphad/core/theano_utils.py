@@ -17,26 +17,28 @@ global_cache = {}
 
 
 class TheanoPrinter(sympy.printing.theanocode.TheanoPrinter):
-    def __init__(self, *args, **kwargs):
-        self.cache = kwargs.pop('cache', dict())
-        self.dims = kwargs.pop('dims', None)
-        super(TheanoPrinter, self).__init__(*args, **kwargs)
-    def _print_Symbol(self, s, **kwargs):
-        key = s.name
+    def _print_Symbol(self, s, dtypes={}, broadcastables={}, dims=tuple(), alloc=False):
+        dtype = dtypes.get(s, 'floatX')
+        broadcastable = broadcastables.get(s, ())
+        key = (s.name, dtype, broadcastable, type(s), alloc)
         if key in self.cache:
-            print('Cache hit: ', key)
-            print('Current cache: ', self.cache)
-            return tt.alloc(*chain([self.cache[key]], self.dims))
+            #print('Cache hit: ', key)
+            #print('Current cache: ', self.cache)
+            return self.cache[key]
         else:
-            print('Cache miss: ', key)
-            print('Current cache: ', self.cache)
-            value = tt.tensor(name=s.name, dtype='floatX', broadcastable=[False]*len(self.dims))
+            #print('Cache miss: ', key)
+            #print('Current cache: ', self.cache)
+            value = tt.tensor(name=s.name, dtype='floatX', broadcastable=broadcastable)
             self.cache[key] = value
-            return tt.alloc(*chain([value], self.dims))
+            if alloc:
+                self.cache[key] = tt.alloc(*chain([value], dims))
+            else:
+                self.cache[key] = value
+            return self.cache[key]
 
     def _print_Number(self, n, **kwargs):
         return float(n)
 
 
 def theano_code(expr, cache=global_cache, **kwargs):
-    return TheanoPrinter(cache=cache, settings={}, dims=kwargs.pop('dims')).doprint(expr, **kwargs)
+    return TheanoPrinter(cache=cache, settings={}).doprint(expr, **kwargs)
