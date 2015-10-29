@@ -134,11 +134,11 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
         obj_code = partial(theano_code, cache=theano_cache, broadcastables=broadcast_dims, dims=dims, alloc=False)
         toutputs = list(map(obj_code, [out]))
         toutputs = toutputs[0] if len(toutputs) == 1 else toutputs
-        callable_dict[name] = theano.function(tinputs, toutputs, mode='FAST_COMPILE', on_unused_input='warn')
+        callable_dict[name] = theano.function(tinputs, toutputs, allow_input_downcast=True, on_unused_input='warn')
         toutputs = list(map(code, [out]))
         toutputs = toutputs[0] if len(toutputs) == 1 else toutputs
         jac = theano.grad(toutputs.sum(), tinputs_alloc, disconnected_inputs='warn')
-        grad_callable_dict[name] = theano.function(tinputs, jac, mode='FAST_COMPILE', on_unused_input='warn')
+        grad_callable_dict[name] = theano.function(tinputs, jac, allow_input_downcast=True, on_unused_input='warn')
 
         # Adjust gradient by the approximate chemical potentials
         hyperplane = Add(*[v.MU(i)*mole_fraction(dbf.phases[name], comps, i)
@@ -166,7 +166,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
         plane_dof_alloc = [plane_theano_cache[(s.name, 'floatX', plane_broadcast_dims[s], type(s), True)] for s in plane_vars]
         plane_dof = [plane_theano_cache[(s.name, 'floatX', plane_broadcast_dims[s], type(s), False)] for s in plane_vars]
         jac = tt.grad(toutputs.sum(), plane_dof_alloc, disconnected_inputs='warn')
-        plane_grad = theano.function(plane_dof, jac, mode='FAST_COMPILE', on_unused_input='warn')
+        plane_grad = theano.function(plane_dof, jac, allow_input_downcast=True, on_unused_input='warn')
         # TODO: FIX THIS IS WRONG DO NOT COMMIT
         plane_hess = lambda *args: 0. #hessian(toutputs, tinputs, disconnected_inputs='warn')
         phase_records[name.upper()] = PhaseRecord(variables=variables,
