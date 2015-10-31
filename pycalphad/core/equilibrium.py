@@ -120,6 +120,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
         # All this theano_cache nonsense is necessary because we have to make sure our symbolic variables are
         # exactly the same copy as what appears in the graph, or else Theano will say it's disconnected
         theano_cache = {}
+        # TODO: Break this up into two loops and build dims here to use symbolic shapes from theano_cache
         for s in variables:
             def_key = (s.name, 'floatX', broadcast_dims[s], type(s), False)
             alloc_key = (s.name, 'floatX', broadcast_dims[s], type(s), True)
@@ -216,11 +217,16 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
         if verbose:
             print('Computing convex hull [iteration {}]'.format(properties.attrs['iterations']))
         # lower_convex_hull will modify properties
+        if np.isnan(grid.GM.values).any():
+            print(grid.Y.values[np.isnan(grid.GM.values)])
+            print(grid.Phase.values[np.isnan(grid.GM.values)])
+
         lower_convex_hull(grid, properties)
-        progress = np.abs(current_potentials - properties.MU).max().values
+        progress = np.abs(current_potentials - properties.MU).values
+        converged = (progress < MIN_PROGRESS).all(axis=-1)
         if verbose:
-            print('progress', progress)
-        if progress < MIN_PROGRESS:
+            print('progress', progress.max(), '[{} conditions updated]'.format(np.sum(~converged)))
+        if progress.max() < MIN_PROGRESS:
             if verbose:
                 print('Convergence achieved')
             break
@@ -267,8 +273,8 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             points.shape = properties.points.shape[:-1] + (-1, maximum_internal_dof)
             # The Y arrays have been padded, so we should slice off the padding
             points = points[..., :dof]
-            # Workaround for derivative issues at endmembers
-            points[points == 0.] = MIN_SITE_FRACTION
+            print('Starting points shape: ', points.shape)
+            #print(points)
             if len(points) == 0:
                 if name in points_dict:
                     del points_dict[name]
@@ -297,18 +303,23 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             # It's easier to flatten and reshape after the fact
             #print('points.shape', points.shape)
             flattened_points = points.reshape(points.shape[:len(indep_vals)] + (-1, points.shape[-1]))
+            print('Starting flattened points shape:', flattened_points.shape)
             #print('flattened_points.shape', flattened_points.shape)
             # This value will propagate through the Theano graphs so all the alloc() calls work
             phase_records[name].points_var.set_value(flattened_points.shape[-2])
             grad_args = itertools.chain([i[..., None] for i in statevar_grid],
                                         [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
             grad = np.array(phase_records[name].grad(*grad_args), dtype=np.float)
+            grad[np.isnan(grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
             #print(grad)
             # Send 'gradient' axis to back
             trx = tuple(range(len(grad.shape)))
             grad = grad.transpose(trx[1:] + (trx[0],))
             #print('before reshape', grad.shape)
             grad.shape = points.shape[:-1] + (grad.shape[-1],)
+            #print('Grad check: ', np.isnan(grad).any())
+            if np.isnan(grad).any():
+                print(points)
             #print('after reshape', grad.shape)
             #print([properties.MU.values[..., i][..., None].shape for i in range(properties.MU.shape[-1])])
             #print([points[..., i].shape for i in range(points.shape[-1])])
@@ -319,7 +330,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             trx = tuple(range(len(cast_grad.shape)))
             cast_grad = cast_grad.transpose(trx[1:] + (trx[0],))
             #print('cast_grad.shape', cast_grad.shape)
-
+            #print('cast_grad check: ', np.isnan(cast_grad).any())
             grad = grad - cast_grad
             #print(grad)
             #print(grad.shape)
@@ -329,30 +340,48 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             hess = broadcast_to(np.eye(num_vars), grad.shape + (grad.shape[-1],)).copy()
             newton_iteration = 0
             while newton_iteration < MAX_NEWTON_ITERATIONS:
-                e_matrix = np.linalg.inv(hess)
+                #print('Hess check: ', np.isnan(hess).any())
+                #print('points check: ', np.isnan(points).any())
+                # Reset singular Hessians to identity matrix
+                cond_hess = np.linalg.cond(hess) > 1e40
+                hess[cond_hess] = np.eye(num_vars)
+                try:
+                    e_matrix = np.linalg.inv(hess)
+                except np.linalg.LinAlgError:
+                    print(cond_hess)
+                    raise
+                #print('Inv hess check: ', np.isnan(e_matrix).any())
+                #print('grad check: ', np.isnan(grad).any())
                 dy_unconstrained = -np.einsum('...ij,...j->...i', e_matrix, grad)
+                #print('dy_unconstrained check: ', np.isnan(dy_unconstrained).any())
                 proj_matrix = np.dot(e_matrix, constraint_jac.T)
                 inv_matrix = np.rollaxis(np.dot(constraint_jac, proj_matrix), 0, -1)
                 inv_term = np.linalg.inv(inv_matrix)
+                #print('inv_term check: ', np.isnan(inv_term).any())
                 first_term = np.einsum('...ij,...jk->...ik', proj_matrix, inv_term)
+                #print('first_term check: ', np.isnan(first_term).any())
                 # Normally a term for the residual here
                 # We only choose starting points which obey the constraints, so r = 0
                 cons_summation = np.einsum('...i,...ji->...j', dy_unconstrained, constraint_jac)
+                #print('cons_summation check: ', np.isnan(cons_summation).any())
                 cons_correction = np.einsum('...ij,...j->...i', first_term, cons_summation)
+                #print('cons_correction check: ', np.isnan(cons_correction).any())
                 dy_constrained = dy_unconstrained - cons_correction
+                #print('dy_constrained check: ', np.isnan(dy_constrained).any())
                 # TODO: Support for adaptive changing independent variable steps
                 new_direction = dy_constrained[..., len(indep_vals):]
                 # Backtracking line search
+                if np.isnan(new_direction).any():
+                    print('new_direction', new_direction)
                 new_points = points + INITIAL_STEP_SIZE * new_direction
+                #print('new_points check: ', np.isnan(new_points).any())
                 alpha = np.full(new_points.shape[:-1], INITIAL_STEP_SIZE, dtype=np.float)
                 negative_points = np.any(new_points < 0., axis=-1)
                 while np.any(negative_points):
-                    alpha[negative_points] *= 0.1
+                    alpha[negative_points] *= 0.5
                     new_points = points + alpha[..., np.newaxis] * new_direction
                     negative_points = np.any(new_points < 0., axis=-1)
 
-                # Workaround for derivative issues at endmembers
-                new_points[new_points == 0.] = 1e-16
                 # BFGS update to Hessian
                 flattened_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
                 # This value will propagate through the Theano graphs so all the alloc() calls work
@@ -360,6 +389,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 grad_args = itertools.chain([i[..., None] for i in statevar_grid],
                                             [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
                 new_grad = np.array(phase_records[name].grad(*grad_args), dtype=np.float)
+                new_grad[np.isnan(new_grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
 
                 # Send 'gradient' axis to back
                 trx = tuple(range(len(new_grad.shape)))
@@ -374,29 +404,31 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 cast_grad = cast_grad.transpose(trx[1:] + (trx[0],))
 
                 new_grad = new_grad - cast_grad
+                #print('new_grad check: ', np.isnan(new_grad).any())
                 # Notation used here consistent with Nocedal and Wright
                 s_k = np.empty(points.shape[:-1] + (points.shape[-1] + len(indep_vals),))
                 # Zero out independent variable changes for now
                 s_k[..., :len(indep_vals)] = 0
                 s_k[..., len(indep_vals):] = new_points - points
-                tiny_step_filter = np.abs(s_k) < MIN_STEP_LENGTH
-                # if all steps were too small, skip all Hessian updating
+                #print('s_k check: ', np.isnan(s_k).any())
+                y_k = new_grad - grad
+                #print('y_k check: ', np.isnan(y_k).any())
+                s_s_term = np.einsum('...j,...k->...jk', s_k, s_k)
+                s_b_s_term = np.einsum('...i,...ij,...j', s_k, hess, s_k)
+                y_y_y_s_term = np.einsum('...j,...k->...jk', y_k, y_k) / \
+                    np.einsum('...i,...i', y_k, s_k)[..., np.newaxis, np.newaxis]
+                #print('y_y_y_s_term check: ', np.isnan(y_y_y_s_term).any())
+                update = np.einsum('...ij,...jk,...kl->...il', hess, s_s_term, hess) / \
+                    s_b_s_term[..., np.newaxis, np.newaxis] + y_y_y_s_term
+                # Skip Hessian updates where step was too small to compute update
                 # Nocedal and Wright recommend against skipping Hessian updates
                 # They recommend using a damped update approach, pp. 538-539 of their book
-                if ~np.all(tiny_step_filter):
-                    y_k = new_grad - grad
-                    s_s_term = np.einsum('...j,...k->...jk', s_k, s_k)
-                    s_b_s_term = np.einsum('...i,...ij,...j', s_k, hess, s_k)
-                    y_y_y_s_term = np.einsum('...j,...k->...jk', y_k, y_k) / \
-                        np.einsum('...i,...i', y_k, s_k)[..., np.newaxis, np.newaxis]
-                    update = np.einsum('...ij,...jk,...kl->...il', hess, s_s_term, hess) / \
-                        s_b_s_term[..., np.newaxis, np.newaxis] + y_y_y_s_term
-                    # Skip Hessian updates where step was too small to compute update
-                    update[tiny_step_filter] = 0
-                    hess = hess - update
-                    cast_hess = np.array(plane_hess(*plane_args), dtype=np.float)
-                    cast_hess = -cast_hess + hess
-                    hess = -cast_hess.astype(np.float, copy=False) #TODO: Why does this fix things?
+                update[np.isnan(update).any(axis=(-2, -1))] = 0
+                #print('Update check: ', np.isnan(update).any())
+                hess = hess - update
+                cast_hess = np.array(plane_hess(*plane_args), dtype=np.float)
+                cast_hess = -cast_hess + hess
+                hess = -cast_hess.astype(np.float, copy=False) #TODO: Why does this fix things?
 
                 points = new_points
                 grad = new_grad

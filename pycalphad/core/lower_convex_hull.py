@@ -115,6 +115,7 @@ def lower_convex_hull(global_grid, result_array):
 
     driving_forces = np.zeros(result_array.GM.values.shape + (len(global_grid.points),),
                                    dtype=np.float)
+    driving_forces[...] = np.inf
 
     max_iterations = 50
     iterations = 0
@@ -131,7 +132,9 @@ def lower_convex_hull(global_grid, result_array):
         #     excepting edge cases
         trial_simplices.T[np.diag_indices(trial_shape[0])] = trial_points.T
         #print('trial_simplices.shape', trial_simplices.shape)
-        #print('global_grid.X.values.shape', global_grid.X.values.shape)
+        #print('global_grid.X.values', global_grid.X.values)
+        #print('global_grid.Y.values', global_grid.Y.values)
+        #print('global_grid.GM.values', global_grid.GM.values)
         flat_statevar_indices = np.unravel_index(np.arange(np.multiply.reduce(result_array.MU.values.shape)),
                                                  result_array.MU.values.shape)[:len(indep_conds)]
         #print('flat_statevar_indices', flat_statevar_indices)

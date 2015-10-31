@@ -3,6 +3,7 @@ This module manages interactions with Theano.
 """
 
 import theano
+import numpy as np
 from theano import tensor as tt
 import sympy
 from itertools import chain
@@ -41,12 +42,12 @@ class TheanoPrinter(sympy.printing.theanocode.TheanoPrinter):
 
     def _print_Integer(self, expr, **kwargs):
         # Upcast to work around an integer overflow bug
-        return theano._asarray(expr.p, dtype='floatX')
+        return np.asarray(expr.p, dtype=theano.config.floatX)
 
     def _print_Rational(self, expr, **kwargs):
         # Upcast to work around an integer overflow bug
-        pxx = theano._asarray(self._print(expr.p, **kwargs), dtype='floatX')
-        qxx = theano._asarray(self._print(expr.q, **kwargs), dtype='floatX')
+        pxx = np.asarray(self._print(expr.p, **kwargs), dtype=theano.config.floatX)
+        qxx = np.asarray(self._print(expr.q, **kwargs), dtype=theano.config.floatX)
         return tt.true_div(pxx, qxx)
 
     def _print_Number(self, n, **kwargs):
