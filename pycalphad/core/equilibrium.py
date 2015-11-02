@@ -293,7 +293,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             #print(grad)
             #print(grad.shape)
             newton_iteration = 0
-            MAX_NEWTON_ITERATIONS = 3 # TODO: DO NOT COMMIT
+            MAX_NEWTON_ITERATIONS = 1 # TODO: DO NOT COMMIT
             while newton_iteration < MAX_NEWTON_ITERATIONS:
                 try:
                     e_matrix = np.linalg.inv(hess)
@@ -320,6 +320,8 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 #print('dy_constrained check: ', np.isnan(dy_constrained).any())
                 # TODO: Support for adaptive changing independent variable steps
                 new_direction = dy_constrained
+                print('points', points)
+                print('new_direction', new_direction)
                 # Backtracking line search
                 if np.isnan(new_direction).any():
                     print('new_direction', new_direction)
@@ -339,7 +341,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 # Remove derivatives wrt T,P
                 grad = grad[..., len(indep_vars):]
                 grad.shape = new_points.shape
-                grad[np.isnan(grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
+                #grad[np.isnan(grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
                 hess_args = itertools.chain([i[..., None] for i in statevar_grid],
                                             [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
                 hess = np.array(phase_records[name].hess(*hess_args), dtype=np.float)
@@ -358,7 +360,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 # Remove derivatives wrt chemical potentials
                 cast_hess = cast_hess[..., properties.MU.shape[-1]:, properties.MU.shape[-1]:]
                 cast_hess = -cast_hess + hess
-                hess = cast_hess.astype(np.float, copy=False)
+                hess = -cast_hess.astype(np.float, copy=False)
                 points = new_points
                 newton_iteration += 1
             new_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
