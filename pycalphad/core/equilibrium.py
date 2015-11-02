@@ -11,7 +11,7 @@ from pycalphad.core.utils import unpack_condition, unpack_phases
 from pycalphad import calculate, Model
 from pycalphad.constraints import mole_fraction
 from pycalphad.core.lower_convex_hull import lower_convex_hull
-from pycalphad.core.theano_utils import theano_code
+from pycalphad.core.theano_utils import build_functions
 from sympy import Add, Mul, Symbol
 import theano
 from theano import tensor as tt
@@ -40,7 +40,7 @@ MIN_SITE_FRACTION = 1e-16
 # initial value of 'alpha' in Newton-Raphson procedure
 INITIAL_STEP_SIZE = 1.
 
-PhaseRecord = namedtuple('PhaseRecord', ['variables', 'points_var', 'grad', 'plane_grad', 'plane_hess'])
+PhaseRecord = namedtuple('PhaseRecord', ['variables', 'grad', 'hess', 'plane_grad', 'plane_hess'])
 
 class EquilibriumError(Exception):
     "Exception related to calculation of equilibrium"
@@ -83,6 +83,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
     phase_records = dict()
     callable_dict = kwargs.pop('callables', dict())
     grad_callable_dict = kwargs.pop('grad_callables', dict())
+    hess_callable_dict = kwargs.pop('hess_callables', dict())
     points_dict = dict()
     maximum_internal_dof = 0
     conds = OrderedDict((key, unpack_condition(value)) for key, value in sorted(conditions.items(), key=str))
@@ -108,37 +109,8 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
         undefs = list(out.atoms(Symbol) - out.atoms(v.StateVariable))
         for undef in undefs:
             out = out.xreplace({undef: float(0)})
-        # This symbolic variable will be used to set the number of points in an array each iteration
-        # This resolves an issue with broadcasting and the grad operator in Theano graphs
-        num_points = theano.shared(0)
-        dims = tuple(len(i) for i in indep_vals) + (num_points,)
-        broadcast_dims = {}
-        broadcast_dims[v.T] = (True, False, True)
-        broadcast_dims[v.P] = (False, True, True)
-        for s in site_fracs:
-            broadcast_dims[s] = (False, False, False)
-        # All this theano_cache nonsense is necessary because we have to make sure our symbolic variables are
-        # exactly the same copy as what appears in the graph, or else Theano will say it's disconnected
-        theano_cache = {}
-        # TODO: Break this up into two loops and build dims here to use symbolic shapes from theano_cache
-        for s in variables:
-            def_key = (s.name, 'floatX', broadcast_dims[s], type(s), False)
-            alloc_key = (s.name, 'floatX', broadcast_dims[s], type(s), True)
-            theano_cache[def_key] = tt.tensor(name=s.name, dtype='floatX', broadcastable=broadcast_dims[s])
-            theano_cache[alloc_key] = tt.alloc(*itertools.chain([theano_cache[def_key]], dims))
-        code = partial(theano_code, cache=theano_cache, broadcastables=broadcast_dims, dims=dims, alloc=True)
-        tinputs_alloc = [theano_cache[(s.name, 'floatX', broadcast_dims[s], type(s), True)] for s in variables]
-        tinputs = [theano_cache[(s.name, 'floatX', broadcast_dims[s], type(s), False)] for s in variables]
-        # Don't force us to have shape information for the objective function
-        # It's only necessary for the gradient to broadcast correctly
-        obj_code = partial(theano_code, cache=theano_cache, broadcastables=broadcast_dims, dims=dims, alloc=False)
-        toutputs = list(map(obj_code, [out]))
-        toutputs = toutputs[0] if len(toutputs) == 1 else toutputs
-        callable_dict[name] = theano.function(tinputs, toutputs, allow_input_downcast=True, on_unused_input='warn')
-        toutputs = list(map(code, [out]))
-        toutputs = toutputs[0] if len(toutputs) == 1 else toutputs
-        jac = theano.grad(toutputs.sum(), tinputs_alloc, disconnected_inputs='warn')
-        grad_callable_dict[name] = theano.function(tinputs, jac, allow_input_downcast=True, on_unused_input='warn')
+        callable_dict[name], grad_callable_dict[name], hess_callable_dict[name] = \
+            build_functions(out, [v.P, v.T], site_fracs)
 
         # Adjust gradient by the approximate chemical potentials
         hyperplane = Add(*[v.MU(i)*mole_fraction(dbf.phases[name], comps, i)
@@ -150,28 +122,11 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             plane_broadcast_dims[v.MU(i)] = (False,) * len(conds.values()) + (True,)  # extra 'vertex' dim
         for i in site_fracs:
             plane_broadcast_dims[i] = (False,) * (len(conds.values())+1)
-        plane_dims = tuple(len(i) for i in conds.values()) + (len(components),)
-        plane_vars = [v.MU(i) for i in comps if i != 'VA'] + site_fracs
-        plane_theano_cache = {}
-        for s in plane_vars:
-            def_key = (s.name, 'floatX', plane_broadcast_dims[s], type(s), False)
-            alloc_key = (s.name, 'floatX', plane_broadcast_dims[s], type(s), True)
-            plane_theano_cache[def_key] = tt.tensor(name=s.name, dtype='floatX', broadcastable=plane_broadcast_dims[s])
-            plane_theano_cache[alloc_key] = tt.alloc(*itertools.chain([plane_theano_cache[def_key]], plane_dims))
-        code = partial(theano_code, cache=plane_theano_cache, dims=plane_dims,
-                       broadcastables=plane_broadcast_dims, alloc=True)
-        toutputs = list(map(code, [hyperplane]))
-        toutputs = toutputs[0] if len(toutputs) == 1 else toutputs
-
-        plane_dof_alloc = [plane_theano_cache[(s.name, 'floatX', plane_broadcast_dims[s], type(s), True)] for s in plane_vars]
-        plane_dof = [plane_theano_cache[(s.name, 'floatX', plane_broadcast_dims[s], type(s), False)] for s in plane_vars]
-        jac = tt.grad(toutputs.sum(), plane_dof_alloc, disconnected_inputs='warn')
-        plane_grad = theano.function(plane_dof, jac, allow_input_downcast=True, on_unused_input='warn')
-        # TODO: FIX THIS IS WRONG DO NOT COMMIT
-        plane_hess = lambda *args: 0. #hessian(toutputs, tinputs, disconnected_inputs='warn')
+        plane_obj, plane_grad, plane_hess = build_functions(hyperplane, [v.MU(i) for i in comps if i != 'VA'],
+                                                            site_fracs, broadcast_dims=plane_broadcast_dims)
         phase_records[name.upper()] = PhaseRecord(variables=variables,
-                                                  points_var=num_points,
                                                   grad=grad_callable_dict[name],
+                                                  hess=hess_callable_dict[name],
                                                   plane_grad=plane_grad,
                                                   plane_hess=plane_hess)
         if verbose:
@@ -343,7 +298,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 #print('Hess check: ', np.isnan(hess).any())
                 #print('points check: ', np.isnan(points).any())
                 # Reset singular Hessians to identity matrix
-                cond_hess = np.linalg.cond(hess) > 1e40
+                cond_hess = np.linalg.cond(hess) > 1e20
                 hess[cond_hess] = np.eye(num_vars)
                 try:
                     e_matrix = np.linalg.inv(hess)
@@ -418,8 +373,8 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 y_y_y_s_term = np.einsum('...j,...k->...jk', y_k, y_k) / \
                     np.einsum('...i,...i', y_k, s_k)[..., np.newaxis, np.newaxis]
                 #print('y_y_y_s_term check: ', np.isnan(y_y_y_s_term).any())
-                update = np.einsum('...ij,...jk,...kl->...il', hess, s_s_term, hess) / \
-                    s_b_s_term[..., np.newaxis, np.newaxis] + y_y_y_s_term
+                update = np.divide(np.einsum('...ij,...jk,...kl->...il', hess, s_s_term, hess),
+                                   s_b_s_term[..., np.newaxis, np.newaxis], dtype=np.longdouble) + y_y_y_s_term
                 # Skip Hessian updates where step was too small to compute update
                 # Nocedal and Wright recommend against skipping Hessian updates
                 # They recommend using a damped update approach, pp. 538-539 of their book
