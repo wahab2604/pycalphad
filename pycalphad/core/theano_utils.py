@@ -64,8 +64,7 @@ def _build_grad_hess(obj, flat_params, full_shape, num_vars):
     grad = theano.grad(obj.sum(), flat_params)
     hess, u = theano.scan(lambda i, gp, p: theano.grad(gp[i], p),
                           sequences=tt.mod(tt.arange(flat_params.shape[0]), num_vars * np.multiply.reduce(full_shape)),
-                          non_sequences=[grad, flat_params],
-                          strict=True)
+                          non_sequences=[grad, flat_params])
     # Not pretty, but it works
     hess = hess.reshape((-1, np.multiply.reduce(full_shape))).sum(axis=-1)
     hess = hess.reshape((num_vars, np.multiply.reduce(full_shape), num_vars)).transpose(1, 0, 2)
@@ -87,28 +86,26 @@ def build_functions(sympy_graph, indep_vars, site_fracs, broadcast_dims=None):
         broadcast_matrix[np.arange(len(indep_vars)), np.arange(len(indep_vars))] = False
         # Site fractions are never broadcast over any dimension; always a "full" ndarray
         broadcast_matrix[len(indep_vars):, :] = False
-        broadcast_dims = {s: broadcast_matrix[i] for i, s in enumerate(indep_vars + site_fracs)}
+        broadcast_dims = {s: tuple(broadcast_matrix[i]) for i, s in enumerate(indep_vars + site_fracs)}
     # All this cache nonsense is necessary because we have to make sure our symbolic variables are
     # exactly the same copy as what appears in the graph, or else Theano will say it's disconnected
     cache = OrderedDict()
-    # Dimension array of full broadcast shape, in symbolic form
-    dims = []
-    for idx, s in enumerate(indep_vars):
+    for s in indep_vars:
         def_key = (s.name, 'floatX', broadcast_dims[s], type(s), False)
         cache[def_key] = tt.tensor(name=s.name, dtype='floatX', broadcastable=broadcast_dims[s])
-        dims.append(cache[def_key].shape[idx])
-    first_sitefrac_key = (site_fracs[0].name, 'floatX', broadcast_dims[site_fracs[0].name],
-                          type(site_fracs[0].name), False)
-    dims.append(cache[first_sitefrac_key].shape[ndims-1])
     for s in site_fracs:
         def_key = (s.name, 'floatX', broadcast_dims[s], type(s), False)
         cache[def_key] = tt.tensor(name=s.name, dtype='floatX', broadcastable=broadcast_dims[s])
+    first_sitefrac_key = (site_fracs[0].name, 'floatX', broadcast_dims[site_fracs[0]],
+                          type(site_fracs[0]), False)
+    # Dimension array of full broadcast shape, in symbolic form
+    dims = [cache[first_sitefrac_key].shape[i] for i in range(len(broadcast_dims[site_fracs[0]]))]
 
     # flat concatenation to use in Hessian
     flat_params = tt.join(*chain([0], [tt.alloc(*chain([cache[i]], dims)).flatten() for i in cache.keys()]))
     # reconstructed variables to use to compute obj
     flat_vars = tt.split(flat_params, nvars * [np.multiply.reduce(dims)], n_splits=nvars)
-    new_vars = {name: flat_vars[idx].reshape(dims) for idx, name in enumerate(cache.keys())}
+    new_vars = {key[0]: flat_vars[idx].reshape(dims) for idx, key in enumerate(cache.keys())}
     for s in indep_vars+site_fracs:
         alloc_key = (s.name, 'floatX', broadcast_dims[s], type(s), True)
         cache[alloc_key] = new_vars[s.name]

@@ -13,14 +13,11 @@ from pycalphad.constraints import mole_fraction
 from pycalphad.core.lower_convex_hull import lower_convex_hull
 from pycalphad.core.theano_utils import build_functions
 from sympy import Add, Mul, Symbol
-import theano
-from theano import tensor as tt
 
 import xray
 import numpy as np
-from collections import namedtuple, defaultdict, OrderedDict
+from collections import namedtuple, OrderedDict
 import itertools
-from functools import partial
 try:
     set
 except NameError:
@@ -228,7 +225,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             points.shape = properties.points.shape[:-1] + (-1, maximum_internal_dof)
             # The Y arrays have been padded, so we should slice off the padding
             points = points[..., :dof]
-            print('Starting points shape: ', points.shape)
+            #print('Starting points shape: ', points.shape)
             #print(points)
             if len(points) == 0:
                 if name in points_dict:
@@ -241,16 +238,16 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             plane_hess = phase_records[name].plane_hess
             statevar_grid = np.meshgrid(*itertools.chain(indep_vals), sparse=True, indexing='ij')
             # TODO: A more sophisticated treatment of constraints
-            num_constraints = len(indep_vals) + len(dbf.phases[name].sublattices)
-            constraint_jac = np.zeros((num_constraints, num_vars))
+            num_constraints = len(dbf.phases[name].sublattices)
+            constraint_jac = np.zeros((num_constraints, num_vars-len(indep_vars)))
             # Independent variables are always fixed (in this limited implementation)
-            for idx in range(len(indep_vals)):
-                constraint_jac[idx, idx] = 1
+            #for idx in range(len(indep_vals)):
+            #    constraint_jac[idx, idx] = 1
             # This is for site fraction balance constraints
-            var_idx = len(indep_vals)
+            var_idx = 0#len(indep_vals)
             for idx in range(len(dbf.phases[name].sublattices)):
                 active_in_subl = set(dbf.phases[name].constituents[idx]).intersection(comps)
-                constraint_jac[len(indep_vals) + idx,
+                constraint_jac[idx,
                                var_idx:var_idx + len(active_in_subl)] = 1
                 var_idx += len(active_in_subl)
 
@@ -258,20 +255,22 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             # It's easier to flatten and reshape after the fact
             #print('points.shape', points.shape)
             flattened_points = points.reshape(points.shape[:len(indep_vals)] + (-1, points.shape[-1]))
-            print('Starting flattened points shape:', flattened_points.shape)
+            #print('Starting flattened points shape:', flattened_points.shape)
             #print('flattened_points.shape', flattened_points.shape)
-            # This value will propagate through the Theano graphs so all the alloc() calls work
-            phase_records[name].points_var.set_value(flattened_points.shape[-2])
             grad_args = itertools.chain([i[..., None] for i in statevar_grid],
                                         [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
             grad = np.array(phase_records[name].grad(*grad_args), dtype=np.float)
+            # Remove derivatives wrt T,P
+            grad = grad[..., len(indep_vars):]
+            grad.shape = points.shape
             grad[np.isnan(grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
+            hess_args = itertools.chain([i[..., None] for i in statevar_grid],
+                                        [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
+            hess = np.array(phase_records[name].hess(*hess_args), dtype=np.float)
+            # Remove derivatives wrt T,P
+            hess = hess[..., len(indep_vars):, len(indep_vars):]
+            hess.shape = points.shape + (hess.shape[-1],)
             #print(grad)
-            # Send 'gradient' axis to back
-            trx = tuple(range(len(grad.shape)))
-            grad = grad.transpose(trx[1:] + (trx[0],))
-            #print('before reshape', grad.shape)
-            grad.shape = points.shape[:-1] + (grad.shape[-1],)
             #print('Grad check: ', np.isnan(grad).any())
             if np.isnan(grad).any():
                 print(points)
@@ -281,29 +280,25 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             plane_args = itertools.chain([properties.MU.values[..., i][..., None] for i in range(properties.MU.shape[-1])],
                                          [points[..., i] for i in range(points.shape[-1])])
             cast_grad = np.array(plane_grad(*plane_args), dtype=np.float)
-            # Send 'gradient' axis to back
-            trx = tuple(range(len(cast_grad.shape)))
-            cast_grad = cast_grad.transpose(trx[1:] + (trx[0],))
-            #print('cast_grad.shape', cast_grad.shape)
-            #print('cast_grad check: ', np.isnan(cast_grad).any())
+            # Remove derivatives wrt chemical potentials
+            cast_grad = cast_grad[..., properties.MU.shape[-1]:]
             grad = grad - cast_grad
+            plane_args = itertools.chain([properties.MU.values[..., i][..., None] for i in range(properties.MU.shape[-1])],
+                                         [points[..., i] for i in range(points.shape[-1])])
+            cast_hess = np.array(plane_hess(*plane_args), dtype=np.float)
+            # Remove derivatives wrt chemical potentials
+            cast_hess = cast_hess[..., properties.MU.shape[-1]:, properties.MU.shape[-1]:]
+            cast_hess = -cast_hess + hess
+            hess = cast_hess.astype(np.float, copy=False)
             #print(grad)
             #print(grad.shape)
-            # This Hessian is an approximation updated using the BFGS method
-            # See Nocedal and Wright, ch.3, p. 198
-            # Initialize as identity matrix
-            hess = broadcast_to(np.eye(num_vars), grad.shape + (grad.shape[-1],)).copy()
             newton_iteration = 0
+            MAX_NEWTON_ITERATIONS = 3 # TODO: DO NOT COMMIT
             while newton_iteration < MAX_NEWTON_ITERATIONS:
-                #print('Hess check: ', np.isnan(hess).any())
-                #print('points check: ', np.isnan(points).any())
-                # Reset singular Hessians to identity matrix
-                cond_hess = np.linalg.cond(hess) > 1e20
-                hess[cond_hess] = np.eye(num_vars)
                 try:
                     e_matrix = np.linalg.inv(hess)
                 except np.linalg.LinAlgError:
-                    print(cond_hess)
+                    print(hess)
                     raise
                 #print('Inv hess check: ', np.isnan(e_matrix).any())
                 #print('grad check: ', np.isnan(grad).any())
@@ -324,7 +319,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 dy_constrained = dy_unconstrained - cons_correction
                 #print('dy_constrained check: ', np.isnan(dy_constrained).any())
                 # TODO: Support for adaptive changing independent variable steps
-                new_direction = dy_constrained[..., len(indep_vals):]
+                new_direction = dy_constrained
                 # Backtracking line search
                 if np.isnan(new_direction).any():
                     print('new_direction', new_direction)
@@ -337,56 +332,34 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                     new_points = points + alpha[..., np.newaxis] * new_direction
                     negative_points = np.any(new_points < 0., axis=-1)
 
-                # BFGS update to Hessian
                 flattened_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
-                # This value will propagate through the Theano graphs so all the alloc() calls work
-                phase_records[name].points_var.set_value(flattened_points.shape[-2])
                 grad_args = itertools.chain([i[..., None] for i in statevar_grid],
                                             [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
-                new_grad = np.array(phase_records[name].grad(*grad_args), dtype=np.float)
-                new_grad[np.isnan(new_grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
-
-                # Send 'gradient' axis to back
-                trx = tuple(range(len(new_grad.shape)))
-                new_grad = new_grad.transpose(trx[1:] + (trx[0],))
-                new_grad.shape = new_points.shape[:-1] + (new_grad.shape[-1],)
-
+                grad = np.array(phase_records[name].grad(*grad_args), dtype=np.float)
+                # Remove derivatives wrt T,P
+                grad = grad[..., len(indep_vars):]
+                grad.shape = new_points.shape
+                grad[np.isnan(grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
+                hess_args = itertools.chain([i[..., None] for i in statevar_grid],
+                                            [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
+                hess = np.array(phase_records[name].hess(*hess_args), dtype=np.float)
+                # Remove derivatives wrt T,P
+                hess = hess[..., len(indep_vars):, len(indep_vars):]
+                hess.shape = new_points.shape + (hess.shape[-1],)
                 plane_args = itertools.chain([properties.MU.values[..., i][..., None] for i in range(properties.MU.shape[-1])],
                                              [new_points[..., i] for i in range(new_points.shape[-1])])
                 cast_grad = np.array(plane_grad(*plane_args), dtype=np.float)
-                # Send 'gradient' axis to back
-                trx = tuple(range(len(cast_grad.shape)))
-                cast_grad = cast_grad.transpose(trx[1:] + (trx[0],))
-
-                new_grad = new_grad - cast_grad
-                #print('new_grad check: ', np.isnan(new_grad).any())
-                # Notation used here consistent with Nocedal and Wright
-                s_k = np.empty(points.shape[:-1] + (points.shape[-1] + len(indep_vals),))
-                # Zero out independent variable changes for now
-                s_k[..., :len(indep_vals)] = 0
-                s_k[..., len(indep_vals):] = new_points - points
-                #print('s_k check: ', np.isnan(s_k).any())
-                y_k = new_grad - grad
-                #print('y_k check: ', np.isnan(y_k).any())
-                s_s_term = np.einsum('...j,...k->...jk', s_k, s_k)
-                s_b_s_term = np.einsum('...i,...ij,...j', s_k, hess, s_k)
-                y_y_y_s_term = np.einsum('...j,...k->...jk', y_k, y_k) / \
-                    np.einsum('...i,...i', y_k, s_k)[..., np.newaxis, np.newaxis]
-                #print('y_y_y_s_term check: ', np.isnan(y_y_y_s_term).any())
-                update = np.divide(np.einsum('...ij,...jk,...kl->...il', hess, s_s_term, hess),
-                                   s_b_s_term[..., np.newaxis, np.newaxis], dtype=np.longdouble) + y_y_y_s_term
-                # Skip Hessian updates where step was too small to compute update
-                # Nocedal and Wright recommend against skipping Hessian updates
-                # They recommend using a damped update approach, pp. 538-539 of their book
-                update[np.isnan(update).any(axis=(-2, -1))] = 0
-                #print('Update check: ', np.isnan(update).any())
-                hess = hess - update
+                # Remove derivatives wrt chemical potentials
+                cast_grad = cast_grad[..., properties.MU.shape[-1]:]
+                grad = grad - cast_grad
+                plane_args = itertools.chain([properties.MU.values[..., i][..., None] for i in range(properties.MU.shape[-1])],
+                                             [new_points[..., i] for i in range(new_points.shape[-1])])
                 cast_hess = np.array(plane_hess(*plane_args), dtype=np.float)
+                # Remove derivatives wrt chemical potentials
+                cast_hess = cast_hess[..., properties.MU.shape[-1]:, properties.MU.shape[-1]:]
                 cast_hess = -cast_hess + hess
-                hess = -cast_hess.astype(np.float, copy=False) #TODO: Why does this fix things?
-
+                hess = cast_hess.astype(np.float, copy=False)
                 points = new_points
-                grad = new_grad
                 newton_iteration += 1
             new_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
             new_points = np.concatenate((current_site_fractions[..., :dof], new_points), axis=-2)
