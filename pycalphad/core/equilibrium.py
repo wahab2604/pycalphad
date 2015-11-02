@@ -270,9 +270,12 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             # Remove derivatives wrt T,P
             hess = hess[..., len(indep_vars):, len(indep_vars):]
             hess.shape = points.shape + (hess.shape[-1],)
+            hess[np.isnan(hess).any(axis=(-2, -1))] = np.eye(hess.shape[-1])
             #print(grad)
             #print('Grad check: ', np.isnan(grad).any())
             if np.isnan(grad).any():
+                print(points)
+            if np.isnan(hess).any():
                 print(points)
             #print('after reshape', grad.shape)
             #print([properties.MU.values[..., i][..., None].shape for i in range(properties.MU.shape[-1])])
@@ -298,7 +301,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             #print(grad)
             #print(grad.shape)
             newton_iteration = 0
-            MAX_NEWTON_ITERATIONS = 20 # TODO: DO NOT COMMIT
+            MAX_NEWTON_ITERATIONS = 5 # TODO: DO NOT COMMIT
             while newton_iteration < MAX_NEWTON_ITERATIONS:
                 try:
                     e_matrix = np.linalg.inv(hess)
@@ -344,13 +347,18 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 # Remove derivatives wrt T,P
                 grad = grad[..., len(indep_vars):]
                 grad.shape = new_points.shape
-                #grad[np.isnan(grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
+                if np.isnan(grad).any():
+                    print(points)
+                grad[np.isnan(grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
                 hess_args = itertools.chain([i[..., None] for i in statevar_grid],
                                             [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
                 hess = np.array(phase_records[name].hess(*hess_args), dtype=np.float)
                 # Remove derivatives wrt T,P
                 hess = hess[..., len(indep_vars):, len(indep_vars):]
                 hess.shape = new_points.shape + (hess.shape[-1],)
+                if np.isnan(hess).any():
+                    print(points)
+                hess[np.isnan(hess).any(axis=(-2, -1))] = np.eye(hess.shape[-1])
                 plane_args = itertools.chain([properties.MU.values[..., i][..., None] for i in range(properties.MU.shape[-1])],
                                              [new_points[..., i] for i in range(new_points.shape[-1])])
                 cast_grad = np.array(plane_grad(*plane_args), dtype=np.float)
