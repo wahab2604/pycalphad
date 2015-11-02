@@ -70,8 +70,9 @@ def _build_grad_hess(obj, flat_params, full_shape, num_vars):
     hess = hess.reshape((num_vars, np.multiply.reduce(full_shape), num_vars)).transpose(1, 0, 2)
     hess = hess.reshape(full_shape + [num_vars, num_vars])
 
-    grad_reshaped = grad.reshape(full_shape + [num_vars])
-    return grad_reshaped, hess
+    # Send 'gradient' axis to back
+    grad = grad.reshape([num_vars] + full_shape).transpose(*chain(range(len(full_shape)+1)[1:], [0]))
+    return grad, hess
 
 
 def build_functions(sympy_graph, indep_vars, site_fracs, broadcast_dims=None):
