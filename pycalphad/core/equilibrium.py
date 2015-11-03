@@ -263,14 +263,12 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             # Remove derivatives wrt T,P
             grad = grad[..., len(indep_vars):]
             grad.shape = points.shape
-            grad[np.isnan(grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
             hess_args = itertools.chain([i[..., None] for i in statevar_grid],
                                         [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
             hess = np.array(phase_records[name].hess(*hess_args), dtype=np.float)
             # Remove derivatives wrt T,P
             hess = hess[..., len(indep_vars):, len(indep_vars):]
             hess.shape = points.shape + (hess.shape[-1],)
-            hess[np.isnan(hess).any(axis=(-2, -1))] = np.eye(hess.shape[-1])
             #print(grad)
             #print('Grad check: ', np.isnan(grad).any())
             if np.isnan(grad).any():
@@ -291,17 +289,17 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
             #print('new_points', points)
             #print('cast_grad', cast_grad)
             grad = grad - cast_grad
+            grad[np.isnan(grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
             plane_args = itertools.chain([properties.MU.values[..., i][..., None] for i in range(properties.MU.shape[-1])],
                                          [points[..., i] for i in range(points.shape[-1])])
             cast_hess = np.array(plane_hess(*plane_args), dtype=np.float)
             # Remove derivatives wrt chemical potentials
             cast_hess = cast_hess[..., properties.MU.shape[-1]:, properties.MU.shape[-1]:]
-            cast_hess = -cast_hess + hess
-            #hess = cast_hess.astype(np.float, copy=False)
+            hess = hess - cast_hess
+            hess[np.isnan(hess).any(axis=(-2, -1))] = np.eye(hess.shape[-1])
             #print(grad)
             #print(grad.shape)
             newton_iteration = 0
-            MAX_NEWTON_ITERATIONS = 5 # TODO: DO NOT COMMIT
             while newton_iteration < MAX_NEWTON_ITERATIONS:
                 try:
                     e_matrix = np.linalg.inv(hess)
@@ -339,6 +337,45 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                     alpha[negative_points] *= 0.5
                     new_points = points + alpha[..., np.newaxis] * new_direction
                     negative_points = np.any(new_points < 0., axis=-1)
+                # Backtracking line search
+                # alpha now contains maximum possible values that keep us inside the space
+                # but we don't just want to take the biggest step; we want the biggest step which reduces energy
+                new_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
+                candidates = calculate(dbf, comps, name, output='GM',
+                                       model=models, callables=callable_dict,
+                                       fake_points=False, points=new_points, **grid_opts)
+                energy_diff = candidates.GM.values.reshape(new_direction.shape[:-1]) - properties.GM.values[..., None]
+                new_points.shape = new_direction.shape
+                print('energy_diff', energy_diff)
+                bad_steps = (alpha * energy_diff) > 1e-3
+                safe_break = 0
+                while np.any(bad_steps):
+                    safe_break += 1
+                    if safe_break > 50:
+                        break
+                    alpha[bad_steps] *= 0.1
+                    new_points = points + alpha[..., np.newaxis] * new_direction
+                    new_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
+                    candidates = calculate(dbf, comps, name, output='GM',
+                                           model=models, callables=callable_dict,
+                                           fake_points=False, points=new_points, **grid_opts)
+                    energy_diff = candidates.GM.values.reshape(new_direction.shape[:-1]) - properties.GM.values[..., None]
+                    new_points.shape = new_direction.shape
+                    bad_steps = (alpha * energy_diff) > 1e-3
+                biggest_step = np.max(np.linalg.norm(alpha[..., np.newaxis] * new_direction, axis=-1))
+                if biggest_step < 1e-12:
+                    if verbose:
+                        print('N-R convergence on mini-iteration', newton_iteration)
+                    points = new_points
+                    break
+                if verbose:
+                    print('Biggest step:', biggest_step)
+                    #print('points', points)
+                    #print('grad of points', grad)
+                    #print('cast grad', cast_grad)
+                    #print('alpha', alpha)
+                    #print('new_direction', new_direction)
+                    #print('new_points', new_points)
 
                 flattened_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
                 grad_args = itertools.chain([i[..., None] for i in statevar_grid],
@@ -347,8 +384,6 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 # Remove derivatives wrt T,P
                 grad = grad[..., len(indep_vars):]
                 grad.shape = new_points.shape
-                if np.isnan(grad).any():
-                    print(points)
                 grad[np.isnan(grad).any(axis=-1)] = 0  # This is necessary for gradients on the edge of composition space
                 hess_args = itertools.chain([i[..., None] for i in statevar_grid],
                                             [flattened_points[..., i] for i in range(flattened_points.shape[-1])])
@@ -356,8 +391,6 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 # Remove derivatives wrt T,P
                 hess = hess[..., len(indep_vars):, len(indep_vars):]
                 hess.shape = new_points.shape + (hess.shape[-1],)
-                if np.isnan(hess).any():
-                    print(points)
                 hess[np.isnan(hess).any(axis=(-2, -1))] = np.eye(hess.shape[-1])
                 plane_args = itertools.chain([properties.MU.values[..., i][..., None] for i in range(properties.MU.shape[-1])],
                                              [new_points[..., i] for i in range(new_points.shape[-1])])
