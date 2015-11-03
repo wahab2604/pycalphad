@@ -307,11 +307,10 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                     print(hess)
                     raise
                 current = calculate(dbf, comps, name, output='GM',
-                                             model=models, callables=callable_dict,
-                                             fake_points=False,
-                                             points=points.reshape(points.shape[:len(indep_vals)] + (-1, points.shape[-1])),
-                                             **grid_opts)
-                print(current.X.values.shape)
+                                    model=models, callables=callable_dict,
+                                    fake_points=False,
+                                    points=points.reshape(points.shape[:len(indep_vals)] + (-1, points.shape[-1])),
+                                    **grid_opts)
                 current_plane = np.multiply(current.X.values.reshape(points.shape[:-1] + (len(components),)),
                                             properties.MU.values[..., np.newaxis, :]).sum(axis=-1)
                 current_df = current.GM.values.reshape(points.shape[:-1]) - current_plane
@@ -335,12 +334,16 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 #print('dy_constrained check: ', np.isnan(dy_constrained).any())
                 # TODO: Support for adaptive changing independent variable steps
                 new_direction = dy_constrained
+                print('new_direction', new_direction)
+                print('points', points)
                 # Backtracking line search
                 if np.isnan(new_direction).any():
                     print('new_direction', new_direction)
                 new_points = points + INITIAL_STEP_SIZE * new_direction
+                # TODO: Breakpoint for if new_direction gets tiny
                 #print('new_points check: ', np.isnan(new_points).any())
                 alpha = np.full(new_points.shape[:-1], INITIAL_STEP_SIZE, dtype=np.float)
+                alpha[np.all(np.abs(new_direction) < 1e-12, axis=-1)] = 0
                 negative_points = np.any(new_points < 0., axis=-1)
                 while np.any(negative_points):
                     alpha[negative_points] *= 0.5
@@ -359,16 +362,16 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 new_points.shape = new_direction.shape
                 bad_steps = energy_diff > alpha * 0.5 * (new_direction * grad).sum(axis=-1)
                 safe_break = 0
-                print('points', points)
+                #print('points', points)
                 while np.any(bad_steps):
                     safe_break += 1
-                    if safe_break > 50:
+                    if safe_break > 500:
                         print('SAFE BREAK')
                         break
                     alpha[bad_steps] *= 0.5
                     new_points = points + alpha[..., np.newaxis] * new_direction
-                    print('new_points', new_points)
-                    print('bad_steps', bad_steps)
+                    #print('new_points', new_points)
+                    #print('bad_steps', bad_steps)
                     new_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
                     candidates = calculate(dbf, comps, name, output='GM',
                                            model=models, callables=callable_dict,
@@ -376,10 +379,10 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                     candidate_plane = np.multiply(candidates.X.values.reshape(points.shape[:-1] + (len(components),)),
                                                   properties.MU.values[..., np.newaxis, :]).sum(axis=-1)
                     energy_diff = (candidates.GM.values.reshape(new_direction.shape[:-1]) - candidate_plane) - current_df
-                    print('energy_diff', energy_diff)
+                    #print('energy_diff', energy_diff)
                     new_points.shape = new_direction.shape
                     bad_steps = energy_diff > alpha * 0.5 * (new_direction * grad).sum(axis=-1)
-                biggest_step = np.max(np.linalg.norm(alpha[..., np.newaxis] * new_direction, axis=-1))
+                biggest_step = np.max(np.linalg.norm(new_points - points, axis=-1))
                 if biggest_step < 1e-12:
                     if verbose:
                         print('N-R convergence on mini-iteration', newton_iteration)
@@ -390,9 +393,8 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                     #print('points', points)
                     #print('grad of points', grad)
                     #print('cast grad', cast_grad)
-                    print('alpha', alpha)
-                    print('new_direction', new_direction)
-                    #print('new_points', new_points)
+                    #print('alpha', alpha)
+                    print('new_points', new_points)
 
                 flattened_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
                 grad_args = itertools.chain([i[..., None] for i in statevar_grid],
@@ -424,7 +426,7 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 hess = cast_hess.astype(np.float, copy=False)
                 points = new_points
                 newton_iteration += 1
-            new_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
+            new_points = points.reshape(points.shape[:len(indep_vals)] + (-1, points.shape[-1]))
             new_points = np.concatenate((current_site_fractions[..., :dof], new_points), axis=-2)
             points_dict[name] = new_points
 
