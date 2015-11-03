@@ -306,6 +306,15 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 except np.linalg.LinAlgError:
                     print(hess)
                     raise
+                current = calculate(dbf, comps, name, output='GM',
+                                             model=models, callables=callable_dict,
+                                             fake_points=False,
+                                             points=points.reshape(points.shape[:len(indep_vals)] + (-1, points.shape[-1])),
+                                             **grid_opts)
+                print(current.X.values.shape)
+                current_plane = np.multiply(current.X.values.reshape(points.shape[:-1] + (len(components),)),
+                                            properties.MU.values[..., np.newaxis, :]).sum(axis=-1)
+                current_df = current.GM.values.reshape(points.shape[:-1]) - current_plane
                 #print('Inv hess check: ', np.isnan(e_matrix).any())
                 #print('grad check: ', np.isnan(grad).any())
                 dy_unconstrained = -np.einsum('...ij,...j->...i', e_matrix, grad)
@@ -344,24 +353,32 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                 candidates = calculate(dbf, comps, name, output='GM',
                                        model=models, callables=callable_dict,
                                        fake_points=False, points=new_points, **grid_opts)
-                energy_diff = candidates.GM.values.reshape(new_direction.shape[:-1]) - properties.GM.values[..., None]
+                candidate_plane = np.multiply(candidates.X.values.reshape(points.shape[:-1] + (len(components),)),
+                                              properties.MU.values[..., np.newaxis, :]).sum(axis=-1)
+                energy_diff = (candidates.GM.values.reshape(new_direction.shape[:-1]) - candidate_plane) - current_df
                 new_points.shape = new_direction.shape
-                print('energy_diff', energy_diff)
-                bad_steps = (alpha * energy_diff) > 1e-3
+                bad_steps = energy_diff > alpha * 0.5 * (new_direction * grad).sum(axis=-1)
                 safe_break = 0
+                print('points', points)
                 while np.any(bad_steps):
                     safe_break += 1
                     if safe_break > 50:
+                        print('SAFE BREAK')
                         break
-                    alpha[bad_steps] *= 0.1
+                    alpha[bad_steps] *= 0.5
                     new_points = points + alpha[..., np.newaxis] * new_direction
+                    print('new_points', new_points)
+                    print('bad_steps', bad_steps)
                     new_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
                     candidates = calculate(dbf, comps, name, output='GM',
                                            model=models, callables=callable_dict,
                                            fake_points=False, points=new_points, **grid_opts)
-                    energy_diff = candidates.GM.values.reshape(new_direction.shape[:-1]) - properties.GM.values[..., None]
+                    candidate_plane = np.multiply(candidates.X.values.reshape(points.shape[:-1] + (len(components),)),
+                                                  properties.MU.values[..., np.newaxis, :]).sum(axis=-1)
+                    energy_diff = (candidates.GM.values.reshape(new_direction.shape[:-1]) - candidate_plane) - current_df
+                    print('energy_diff', energy_diff)
                     new_points.shape = new_direction.shape
-                    bad_steps = (alpha * energy_diff) > 1e-3
+                    bad_steps = energy_diff > alpha * 0.5 * (new_direction * grad).sum(axis=-1)
                 biggest_step = np.max(np.linalg.norm(alpha[..., np.newaxis] * new_direction, axis=-1))
                 if biggest_step < 1e-12:
                     if verbose:
@@ -373,8 +390,8 @@ def equilibrium(dbf, comps, phases, conditions, **kwargs):
                     #print('points', points)
                     #print('grad of points', grad)
                     #print('cast grad', cast_grad)
-                    #print('alpha', alpha)
-                    #print('new_direction', new_direction)
+                    print('alpha', alpha)
+                    print('new_direction', new_direction)
                     #print('new_points', new_points)
 
                 flattened_points = new_points.reshape(new_points.shape[:len(indep_vals)] + (-1, new_points.shape[-1]))
