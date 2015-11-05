@@ -30,6 +30,7 @@ requirements:
     - tinydb
     - scipy
     - numpy >=1.9
+    - theano >=0.7
 
   run:
     - python
@@ -41,6 +42,7 @@ requirements:
     - tinydb
     - scipy
     - numpy >=1.9
+    - theano >=0.7
 
 build:
   script: python setup.py build && python setup.py install

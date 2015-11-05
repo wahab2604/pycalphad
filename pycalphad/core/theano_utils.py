@@ -115,7 +115,9 @@ def build_functions(sympy_graph, indep_vars, site_fracs, broadcast_dims=None):
     obj = list(map(code, [sympy_graph]))
     obj = obj[0] if len(obj) == 1 else obj
     grad, hess = _build_grad_hess(obj, flat_params, dims, nvars)
-    ofunc = theano.function(tinputs, obj)
-    gfunc = theano.function(tinputs, grad)
-    hfunc = theano.function(tinputs, hess)
+    custom_opt = theano.compile.optdb.query(theano.gof.Query(include=['fast_compile'], exclude=['inplace']))
+    custom_mode = theano.compile.mode.Mode(linker='cvm', optimizer=custom_opt)
+    ofunc = theano.function(tinputs, obj, mode=custom_mode)
+    gfunc = theano.function(tinputs, grad, mode=custom_mode)
+    hfunc = theano.function(tinputs, hess, mode=custom_mode)
     return ofunc, gfunc, hfunc
