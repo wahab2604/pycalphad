@@ -23,7 +23,7 @@ def setup_dataset(file_obj, dbf, params):
     param_vars = []
     for key, mod in fit_models.items():
         param_vars.extend(sorted(set(mod.ast.atoms(Symbol)) - set(mod.variables), key=str))
-    param_vars = sorted(param_vars)
+    param_vars = sorted(param_vars, key=str)
     if len(params) != len(param_vars):
         raise ValueError('Input parameter vector length doesn\'t match the free parameters'
                          ' in the phase models: {0} != {1}'.format(len(params), len(param_vars)))
@@ -38,18 +38,21 @@ def setup_dataset(file_obj, dbf, params):
                                 dims=list(extra_conds.keys())+['points'], coords=extra_conds)
 
     def compute_error(*args):
-        prefill_callables = {key: functools.partial(*itertools.chain([func],args[:len(params)])) for key, func in callables.items()}
+        prefill_callables = {key: functools.partial(*itertools.chain([func], args[:len(params)]))
+                             for key, func in callables.items()}
         result = calculate(dbf, data['components'], data['phases'], output=data['output'],
-                       points=np.atleast_2d(data['solver']['sublattice_configuration']).astype(np.float),
-                       callables=prefill_callables, model=fit_models, **extra_conds)
-        error = (result[data['output']] - exp_values).sel(T=slice(300, None)).values.flatten() # Eliminate data below 300 K for now
+                           points=np.atleast_2d(data['solver']['sublattice_configuration']).astype(np.float),
+                           callables=prefill_callables, model=fit_models, **extra_conds)
+        # Eliminate data below 300 K for now
+        error = (result[data['output']] - exp_values).sel(T=slice(300, None)).values.flatten()
         return error
 
     def compute_values(*args):
-        prefill_callables = {key: functools.partial(*itertools.chain([func],args[:len(params)])) for key, func in callables.items()}
+        prefill_callables = {key: functools.partial(*itertools.chain([func], args[:len(params)]))
+                             for key, func in callables.items()}
         result = calculate(dbf, data['components'], data['phases'], output=data['output'],
-                       points=np.atleast_2d(data['solver']['sublattice_configuration']).astype(np.float),
-                       callables=prefill_callables, model=fit_models, **extra_conds)
+                           points=np.atleast_2d(data['solver']['sublattice_configuration']).astype(np.float),
+                           callables=prefill_callables, model=fit_models, **extra_conds)
         return result
 
     return compute_error, compute_values, exp_values
