@@ -213,3 +213,108 @@ cdef class Problem:
     #    # Needs to return lower triangular matrix
     #    return H
     #
+
+cdef class FixedChemicalPotentialProblem:
+    def __init__(self, CompositionSet compset, comps, conditions, double[::1] chemical_potentials):
+        cdef int num_sitefrac_bals = compset.phase_record.sublattice_dof.shape[0]
+        cdef int num_constraints = num_sitefrac_bals
+        cdef int constraint_idx = 0
+        cdef int var_idx = 0
+        cdef int phase_idx = 0
+        self.compset = compset
+        self.chemical_potentials = chemical_potentials
+        self.conditions = conditions
+        self.components = sorted(comps)
+        self.num_vars = compset.phase_record.phase_dof
+        self.num_constraints = num_constraints
+        # TODO: No more special-casing T and P conditions
+        self.temperature = self.conditions['T']
+        self.pressure = self.conditions['P']
+        self.xl = np.full(self.num_vars, MIN_SITE_FRACTION)
+        self.xu = np.ones(self.num_vars)*2e19
+        self.x0 = np.zeros(self.num_vars)
+        self.x0[:] = compset.dof[2:]
+        self.cl = np.zeros(num_constraints)
+        self.cu = np.zeros(num_constraints)
+        # Site fraction balance constraints
+        self.cl[:num_sitefrac_bals] = 1
+        self.cu[:num_sitefrac_bals] = 1
+
+    def objective(self, x_in):
+        cdef CompositionSet compset
+        cdef int phase_idx = 0
+        cdef double total_obj = 0
+        cdef int var_offset = 0
+        cdef double[::1] x = np.r_[self.pressure, self.temperature, np.array(x_in)]
+        cdef double tmp = 0
+        cdef double[:,::1] dof_2d_view = <double[:1,:x.shape[0]]>&x[0]
+        cdef double[::1] energy_2d_view = <double[:1]>&tmp
+        cdef double[::1] mass = np.zeros(self.chemical_potentials.shape[0])
+        cdef double[:,::1] X_2d_view = <double[:mass.shape[0],:1]>&mass[0]
+
+        x = np.r_[self.pressure, self.temperature, x_in]
+        dof_2d_view = <double[:1,:x.shape[0]]>&x[0]
+        self.compset.phase_record.obj(energy_2d_view, dof_2d_view)
+        for comp_idx in range(self.chemical_potentials.shape[0]):
+            self.compset.phase_record.mass_obj(X_2d_view[comp_idx], x_in, comp_idx)
+        total_obj = tmp - np.dot(self.chemical_potentials, mass)
+
+        return total_obj
+
+    def gradient(self, x_in):
+        cdef int dof_x_idx
+        cdef double total_obj = 0
+        cdef double[::1] x = np.r_[self.pressure, self.temperature, np.array(x_in)]
+        cdef double[:,::1] dof_2d_view = <double[:1,:x.shape[0]]>&x[0]
+        cdef double[::1] grad_tmp = np.zeros(x.shape[0])
+        cdef np.ndarray[ndim=1, dtype=np.float64_t] gradient_term = np.zeros(self.num_vars)
+        cdef double[:,::1] mass_grad = np.zeros((self.chemical_potentials.shape[0], self.num_vars))
+
+
+        self.compset.phase_record.grad(grad_tmp, x)
+        for comp_idx in range(self.chemical_potentials.shape[0]):
+            self.compset.phase_record.mass_grad(mass_grad[comp_idx], x_in, comp_idx)
+        for dof_x_idx in range(self.compset.phase_record.phase_dof):
+            gradient_term[dof_x_idx] = grad_tmp[2+dof_x_idx] - np.dot(self.chemical_potentials, mass_grad[:,dof_x_idx])  # Remove P,T grad part
+
+        gradient_term[np.isnan(gradient_term)] = 0
+        return gradient_term
+
+    def constraints(self, x_in):
+        cdef int num_sitefrac_bals = self.compset.phase_record.sublattice_dof.shape[0]
+        cdef np.ndarray[ndim=1, dtype=np.float64_t] l_constraints = np.zeros(self.num_constraints)
+        cdef int phase_idx, var_offset, constraint_offset, var_idx, iter_idx, grad_idx, \
+            hess_idx, comp_idx, idx, sum_idx, spidx, active_in_subl
+        cdef int vacancy_offset = 0
+        cdef double[::1] x = np.r_[self.pressure, self.temperature, np.array(x_in)]
+
+        # First: Site fraction balance constraints
+        var_idx = 0
+        constraint_offset = 0
+        for idx in range(self.compset.phase_record.sublattice_dof.shape[0]):
+            active_in_subl = self.compset.phase_record.sublattice_dof[idx]
+            for sum_idx in range(active_in_subl):
+                l_constraints[constraint_offset + idx] += x[2+sum_idx+var_idx]
+            var_idx += active_in_subl
+        return l_constraints
+
+    def jacobian(self, x_in):
+        cdef double[::1] x = np.r_[self.pressure, self.temperature, np.array(x_in)]
+        cdef double[::1] tmp_mass = np.atleast_1d(np.zeros(1))
+        cdef double[::1] tmp_mass_grad = np.zeros(self.num_vars)
+        cdef double[:,::1] constraint_jac = np.zeros((self.num_constraints, self.num_vars))
+        cdef int phase_idx, var_offset, constraint_offset, var_idx, iter_idx, grad_idx, \
+            hess_idx, comp_idx, idx, sum_idx, spidx, active_in_subl, phase_offset
+        cdef int vacancy_offset = 0
+
+        # Ordering of constraints by row: sitefrac bal of each phase, then component mass balance
+        # Ordering of constraints by column: site fractions of each phase, then phase fractions
+        # First: Site fraction balance constraints
+        var_idx = 0
+        constraint_offset = 0
+        for idx in range(self.compset.phase_record.sublattice_dof.shape[0]):
+            active_in_subl = self.compset.phase_record.sublattice_dof[idx]
+            constraint_jac[constraint_offset + idx,
+            var_idx:var_idx + active_in_subl] = 1
+            var_idx += active_in_subl
+        return np.array(constraint_jac)
