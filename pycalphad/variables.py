@@ -115,6 +115,9 @@ class StateVariable(Symbol):
     def __new__(cls, name, *args, **assumptions):
         return Symbol.__new__(cls, name.upper(), real=True, **assumptions)
 
+    def as_dof(self, models):
+        return self
+
 class SiteFraction(StateVariable):
     """
     Site fractions are symbols with built-in assumptions of being real
@@ -210,6 +213,34 @@ class Composition(StateVariable):
         else:
             return 'x_{'+self.species.escaped_name+'}'
 
+    def as_dof(self, models):
+        if self.phase_name is None:
+            if self.phase_name in models:
+                return models[self.phase_name].moles(self.species)
+            else:
+                raise ValueError('{} not defined in phase models {}'.format(str(self), list(models.keys())))
+        result = S.Zero
+        for phase_name, model in models.items():
+            result += PhaseFraction(phase_name).as_dof(models) * model.moles(self.species)
+        return result
+
+
+class TotalMoles(StateVariable):
+    def __new__(cls):
+        self = StateVariable.__new__(cls, 'N', nonnegative=True)
+        return self
+
+    def as_dof(self, models):
+        result = S.Zero
+        for phase_name, model in models.items():
+            desired_active_pure_elements = [list(x.constituents.keys()) for x in model.components]
+            desired_active_pure_elements = [el.upper() for constituents in desired_active_pure_elements for el in
+                                            constituents]
+            pure_elements = sorted(set([x for x in desired_active_pure_elements if x != 'VA']))
+            for comp in pure_elements:
+                result += PhaseFraction(phase_name).as_dof(models) * model.moles(comp)
+        return result
+
 class ChemicalPotential(StateVariable):
     """
     Chemical potentials are symbols with built-in assumptions of being real.
@@ -236,7 +267,7 @@ temperature = T = StateVariable('T')
 entropy = S = StateVariable('S')
 pressure = P = StateVariable('P')
 volume = V = StateVariable('V')
-moles = N = StateVariable('N')
+moles = N = TotalMoles()
 site_fraction = Y = SiteFraction
 X = Composition
 MU = ChemicalPotential
