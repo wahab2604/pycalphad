@@ -13,6 +13,7 @@ from pycalphad.core.sympydiff_utils import build_functions
 from pycalphad.core.phase_rec import PhaseRecord_from_cython
 from pycalphad.core.constants import MIN_SITE_FRACTION
 from pycalphad.core.eqsolver import _solve_eq_at_conditions
+from pycalphad.core.constraints import Constraints
 from sympy import Add, Symbol
 import dask
 from dask import delayed
@@ -26,6 +27,7 @@ from xarray import Dataset
 import numpy as np
 from collections import namedtuple, OrderedDict
 from datetime import datetime
+import operator
 
 
 class EquilibriumError(Exception):
@@ -248,6 +250,7 @@ def equilibrium(dbf, comps, phases, conditions, output=None, model=None,
     if verbose:
         print('Components:', ' '.join([str(x) for x in comps]))
         print('Phases:', end=' ')
+    all_variables = set()
     max_phase_name_len = max(len(name) for name in active_phases)
     # Need to allow for '_FAKE_' psuedo-phase
     max_phase_name_len = max(max_phase_name_len, 6)
@@ -259,6 +262,7 @@ def equilibrium(dbf, comps, phases, conditions, output=None, model=None,
         variables = sorted(site_fracs, key=str)
         maximum_internal_dof = max(maximum_internal_dof, len(site_fracs))
         out = models[name].energy
+        all_variables |= set(x for x in out.free_symbols if isinstance(x, v.StateVariable))
         if (not callable_dict.get(name, False)) or not (grad_callable_dict.get(name, False)) \
                 or (not hess_callable_dict.get(name, False)):
             # Only force undefineds to zero if we're not overriding them
@@ -295,7 +299,8 @@ def equilibrium(dbf, comps, phases, conditions, output=None, model=None,
             print(name, end=' ')
     if verbose:
         print('[done]', end='\n')
-
+    constraints = Constraints(list(conds.keys()), OrderedDict(sorted(models.items(), key=operator.itemgetter(0))),
+                              sorted(all_variables, key=str), parameters=param_symbols)
     # 'calculate' accepts conditions through its keyword arguments
     grid_opts = calc_opts.copy()
     grid_opts.update({key: value for key, value in str_conds.items() if key in indep_vars})

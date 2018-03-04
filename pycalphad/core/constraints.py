@@ -56,26 +56,40 @@ def build_constraint_functions(constraints, rhs, variables, parameters=None):
 
 
 class Constraints(object):
-    def __init__(self, conditions, models, variables, parameters=None):
+    def __init__(self, cond_keys, models, variables, parameters=None):
         parameters = parameters if parameters is not None else []
         constraints = []
-        rhs = []
+        self.models = list(models.values())
         # User-specified constraints
-        for cond, value in conditions.items():
-            constraints.append(cond.as_dof())
-            rhs.append(value)
+        for cond in cond_keys:
+            constraints.append(cond.as_dof(models))
         # Sublattice site fraction balance constraints (mandatory)
-        for model in models.values():
+        for model in self.models:
             for idx, sublattice in enumerate(model.constituents):
                 active = set(sublattice).intersection(model.components)
                 if len(active) > 0:
                     balance = sum(v.SiteFraction(model.phase_name, idx, spec) for spec in active)
                     constraints.append(balance)
-                    rhs.append(1)
-        self.symbols = constraints
-        self.rhs = rhs
-        self.parameters = parameters
+        self.parameters = []
         self.cons_func, self.jac_func = \
             build_constraint_functions(constraints,
-                                       [Symbol('_RHS_{}'.format(i)) for i in range(len(rhs))], variables,
+                                       [Symbol('_RHS_{}'.format(i)) for i in range(len(constraints))], variables,
                                        parameters=parameters)
+
+    def conds_to_rhs(self, conditions):
+        rhs = []
+        # User-specified constraints
+        for cond, value in conditions.items():
+            rhs.append(value)
+        # Sublattice site fraction balance constraints (mandatory)
+        for model in self.models:
+            for idx, sublattice in enumerate(model.constituents):
+                active = set(sublattice).intersection(model.components)
+                if len(active) > 0:
+                    rhs.append(1)
+        return rhs
+
+    def constraints(self):
+        pass
+    def jacobian(self):
+        pass
