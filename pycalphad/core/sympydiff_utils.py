@@ -37,21 +37,18 @@ class PickleableFunction(object):
 
     @property
     def kernel(self):
-        with CompileLock:
-            if self._kernel is None:
-                if self._module_name is not None:
-                    start = time.time()
-                    mod = None
-                    while mod is None:
-                        try:
-                            mod = import_extension(self._workdir, self._module_name)
-                            self._kernel = getattr(mod, self._routine_name + '_c')
-                            self._cpointer = getattr(mod, 'get_pointer_c')()
-                        except ImportError:
-                            if start + 60 > time.time():
-                                raise
-                else:
-                    self._kernel = self.compile()
+        if self._kernel is None:
+            if self._module_name is None:
+                self.compile()
+            mod = None
+            while mod is None:
+                try:
+                    mod = import_extension(self._workdir, self._module_name)
+                    self._kernel = getattr(mod, self._routine_name + '_c')
+                    self._cpointer = getattr(mod, 'get_pointer_c')()
+                except ImportError:
+                    # XXX: needs a timeout check
+                    time.sleep(0.5)
         return self._kernel
 
     def compile(self):
@@ -77,9 +74,7 @@ class PickleableFunction(object):
 
 class AutowrapFunction(PickleableFunction):
     def compile(self):
-        with CompileLock:
-            result, self._cpointer, self._module_name, self._routine_name = autowrap(self._sympyobj, args=self._sympyvars, backend='Cython', language='C', tempdir=self._workdir)
-        return result
+        self._module_name, self._routine_name = autowrap(self._sympyobj, args=self._sympyvars, backend='Cython', language='C', tempdir=self._workdir)
 
 
 @cacheit

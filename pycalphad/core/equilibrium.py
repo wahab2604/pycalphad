@@ -26,6 +26,11 @@ from xarray import Dataset
 import numpy as np
 from collections import namedtuple, OrderedDict
 from datetime import datetime
+import threading
+try:
+    import Queue
+except ImportError:
+    import queue as Queue
 
 
 class EquilibriumError(Exception):
@@ -292,6 +297,30 @@ def equilibrium(dbf, comps, phases, conditions, output=None, model=None,
                                                               mass_dict[name], mass_grad_dict[name])
         if verbose:
             print(name, end=' ')
+
+    compileq = Queue.Queue()
+
+    def process_jit(i, q):
+        while True:
+            try:
+                result = q.get(timeout=10)
+            except Queue.Empty:
+                break
+            func, comp_idx, grad = result
+            print('PROCESS', i, func, comp_idx, grad)
+            func(comp_idx, grad)
+            q.task_done()
+
+    for i in range(4):
+        worker = threading.Thread(target=process_jit, args=(i, compileq,))
+        worker.setDaemon(True)
+        worker.start()
+    for prx in phase_records.values():
+        compileq.put((prx.trigger_jit, None, True))
+        compileq.put((prx.trigger_jit, None, False))
+        for idx in range(len(pure_elements)):
+            compileq.put((prx.trigger_jit, idx, False))
+    compileq.join()
     if verbose:
         print('[done]', end='\n')
 

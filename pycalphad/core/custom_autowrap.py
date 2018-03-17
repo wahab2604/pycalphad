@@ -82,12 +82,18 @@ from sympy.matrices import (MatrixSymbol, ImmutableMatrix, MatrixBase,
                             MatrixExpr, MatrixSlice)
 from sympy.utilities.lambdify import implemented_function
 from sympy.utilities.autowrap import CythonCodeWrapper, DummyWrapper
-from subprocess import STDOUT, CalledProcessError, check_output
+from subprocess import STDOUT, CalledProcessError, check_output, Popen
 from sympy.printing.ccode import ccode
 import os
 import sys
 import tempfile
 import uuid
+from threading import RLock
+try:
+    from subprocess import DEVNULL
+except ImportError:
+    import os
+    DEVNULL = open(os.devnull, 'wb')
 
 
 # Here we define a lookup of backends -> tuples of languages. For now, each
@@ -425,6 +431,9 @@ class CustomCCodeGen(CCodeGen):
         return Routine(name, arg_list, return_val, local_vars, global_vars)
 
 
+PrinterLock = RLock()
+
+
 class ThreadSafeCythonCodeWrapper(CythonCodeWrapper):
     setup_template = (
         "from distutils.core import setup\n"
@@ -499,12 +508,7 @@ class ThreadSafeCythonCodeWrapper(CythonCodeWrapper):
     def _process_files(self, routine):
         command = self.command
         command.extend(self.flags)
-        try:
-            retoutput = check_output(command, stderr=STDOUT)
-        except CalledProcessError as e:
-            raise CodeWrapError(
-                "Error while executing command: %s. Command output is:\n%s" % (
-                    " ".join(command), e.output.decode()))
+        Popen(command, stdout=DEVNULL, stderr=DEVNULL)
 
     def _prototype_arg(self, arg):
         mat_dec = "np.ndarray[{mtype}, ndim={ndim}] {name}"
@@ -538,14 +542,14 @@ class ThreadSafeCythonCodeWrapper(CythonCodeWrapper):
         workdir = self.filepath
         if not os.access(workdir, os.F_OK):
             os.mkdir(workdir)
-        self.generator.write(
-            [routine]+helpers, str(os.path.join(workdir, self.filename)).replace(os.sep, '/'), True, self.include_header,
-            self.include_empty)
-        self._prepare_files(routine)
+        with PrinterLock:
+            self.generator.write(
+                [routine]+helpers, str(os.path.join(workdir, self.filename)).replace(os.sep, '/'), True, self.include_header,
+                self.include_empty)
+            self._prepare_files(routine)
         self._process_files(routine)
-        mod = import_extension(workdir, self.module_name)
 
-        return self._get_wrapped_function(mod, routine.name), self._get_wrapped_function(mod, 'get_pointer')(), str(self.module_name), str(routine.name)
+        return str(self.module_name), str(routine.name)
 
 
 def _get_code_wrapper_class(backend):
@@ -724,20 +728,21 @@ def autowrap(
         if expr.has(expr_h):
             name_h = binary_function(name_h, expr_h, backend = 'dummy')
             expr = expr.subs(expr_h, name_h(*args_h))
-    try:
-        routine = make_routine('autofunc', expr, args)
-    except CodeGenArgumentListError as e:
-        # if all missing arguments are for pure output, we simply attach them
-        # at the end and try again, because the wrappers will silently convert
-        # them to return values anyway.
-        new_args = []
-        for missing in e.missing_args:
-            if not isinstance(missing, OutputArgument):
-                raise
-            new_args.append(missing.name)
-        routine = make_routine('autofunc', expr, args + new_args)
+    with PrinterLock:
+        try:
+            routine = make_routine('autofunc', expr, args)
+        except CodeGenArgumentListError as e:
+            # if all missing arguments are for pure output, we simply attach them
+            # at the end and try again, because the wrappers will silently convert
+            # them to return values anyway.
+            new_args = []
+            for missing in e.missing_args:
+                if not isinstance(missing, OutputArgument):
+                    raise
+                new_args.append(missing.name)
+            routine = make_routine('autofunc', expr, args + new_args)
 
-    return code_wrapper.wrap_code(routine, helpers=helps)
+        return code_wrapper.wrap_code(routine, helpers=helps)
 
 
 def binary_function(symfunc, expr, **kwargs):
