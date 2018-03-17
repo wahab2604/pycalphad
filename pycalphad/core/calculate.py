@@ -20,6 +20,11 @@ import collections
 import warnings
 from xarray import Dataset, concat
 from collections import OrderedDict
+import threading
+try:
+    import Queue
+except ImportError:
+    import queue as Queue
 
 
 def _generate_fake_points(components, statevar_dict, energy_limit, output, maximum_internal_dof, broadcast):
@@ -322,6 +327,7 @@ def calculate(dbf, comps, phases, mode=None, output='GM', fake_points=False, bro
                                                 for (key, value) in statevar_dict.items())
     all_phase_data = []
     comp_sets = {}
+    phase_records = {}
     largest_energy = 1e30
     maximum_internal_dof = 0
 
@@ -387,9 +393,42 @@ def calculate(dbf, comps, phases, mode=None, output='GM', fake_points=False, bro
                                                      include_obj=True, include_grad=False,
                                                      parameters=param_symbols)
                                      for el in pure_elements]
-        phase_record = PhaseRecord_from_cython(comps, list(statevar_dict.keys()) + variables,
-                                    np.array(dbf.phases[phase_name].sublattices, dtype=np.float),
-                                    param_values, comp_sets[phase_name], None, None, mass_dict[phase_name], None)
+        phase_records[phase_name] = PhaseRecord_from_cython(comps, list(statevar_dict.keys()) + variables,
+                                                            np.array(dbf.phases[phase_name].sublattices, dtype=np.float),
+                                                            param_values, comp_sets[phase_name], None, None,
+                                                            mass_dict[phase_name], None)
+
+    compileq = Queue.Queue()
+
+    def process_jit(i, q):
+        while True:
+            try:
+                result = q.get(timeout=10)
+            except Queue.Empty:
+                break
+            func, comp_idx, grad = result
+            print('PROCESS', i, func, comp_idx, grad)
+            func(comp_idx, grad)
+            q.task_done()
+
+    for i in range(4):
+        worker = threading.Thread(target=process_jit, args=(i, compileq,))
+        worker.setDaemon(True)
+        worker.start()
+    for prx in phase_records.values():
+        compileq.put((prx.trigger_jit, None, False))
+    compileq.join()
+
+    for phase_name, phase_obj in sorted(active_phases.items()):
+        try:
+            mod = model_dict[phase_name]
+        except KeyError:
+            continue
+        # this is a phase model we couldn't construct for whatever reason; skip it
+        if isinstance(mod, type):
+            continue
+        # Construct an ordered list of the variables
+        variables, sublattice_dof = generate_dof(phase_obj, mod.components)
         points = points_dict[phase_name]
         if points is None:
             points = _sample_phase_constitution(phase_name, phase_obj.constituents, sublattice_dof, comps,
@@ -399,7 +438,7 @@ def calculate(dbf, comps, phases, mode=None, output='GM', fake_points=False, bro
 
         fp = fake_points and (phase_name == sorted(active_phases.keys())[0])
         phase_ds = _compute_phase_values(nonvacant_components, str_statevar_dict,
-                                         points, phase_record, output,
+                                         points, phase_records[phase_name], output,
                                          maximum_internal_dof, broadcast=broadcast,
                                          largest_energy=float(largest_energy), fake_points=fp)
         all_phase_data.append(phase_ds)

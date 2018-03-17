@@ -48,7 +48,7 @@ class PickleableFunction(object):
                     self._cpointer = getattr(mod, 'get_pointer_c')()
                 except ImportError:
                     # XXX: needs a timeout check
-                    time.sleep(0.5)
+                    time.sleep(0.1)
         return self._kernel
 
     def compile(self):

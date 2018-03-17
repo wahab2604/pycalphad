@@ -542,11 +542,10 @@ class ThreadSafeCythonCodeWrapper(CythonCodeWrapper):
         workdir = self.filepath
         if not os.access(workdir, os.F_OK):
             os.mkdir(workdir)
-        with PrinterLock:
-            self.generator.write(
-                [routine]+helpers, str(os.path.join(workdir, self.filename)).replace(os.sep, '/'), True, self.include_header,
-                self.include_empty)
-            self._prepare_files(routine)
+        self.generator.write(
+            [routine]+helpers, str(os.path.join(workdir, self.filename)).replace(os.sep, '/'), True, self.include_header,
+            self.include_empty)
+        self._prepare_files(routine)
         self._process_files(routine)
 
         return str(self.module_name), str(routine.name)
@@ -728,6 +727,7 @@ def autowrap(
         if expr.has(expr_h):
             name_h = binary_function(name_h, expr_h, backend = 'dummy')
             expr = expr.subs(expr_h, name_h(*args_h))
+    # Workaround for pbrady/fastcache#36
     with PrinterLock:
         try:
             routine = make_routine('autofunc', expr, args)
