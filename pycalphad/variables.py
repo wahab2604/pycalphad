@@ -162,13 +162,15 @@ class PhaseMoles(StateVariable):
     """
     def __new__(cls, phase_name):
         namesplit = phase_name.split('#')
+        varname = 'NP_' + namesplit[0]
         if len(namesplit) > 2:
             raise ValueError('Invalid phase name for condition')
         elif len(namesplit) == 2:
             multiplicity = namesplit[1]
+            varname += '_' + str(multiplicity)
         else:
-            multiplicity = 1
-        new_self = StateVariable.__new__(cls, namesplit[0], nonnegative=True)
+            multiplicity = 0
+        new_self = StateVariable.__new__(cls, varname, nonnegative=True)
         new_self.phase_name = namesplit[0]
         new_self.multiplicity = multiplicity
         return new_self
