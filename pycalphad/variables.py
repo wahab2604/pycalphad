@@ -249,8 +249,10 @@ class ChemicalPotential(StateVariable):
         return 'MU_%s' % self.species.name
 
 temperature = T = StateVariable('T')
+temperature.default_value = 300
 entropy = S = StateVariable('S')
 pressure = P = StateVariable('P')
+pressure.default_value = 101325
 volume = V = StateVariable('V')
 moles = N = StateVariable('N')
 phase_moles = NP = PhaseMoles
