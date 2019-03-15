@@ -155,26 +155,31 @@ class SiteFraction(StateVariable):
         return 'Y(%s,%d,%s)' % \
             (self.phase_name, self.sublattice_index, self.species.escaped_name)
 
-class PhaseFraction(StateVariable):
+class PhaseMoles(StateVariable):
     """
-    Phase fractions are symbols with built-in assumptions of being real
+    Phase amounts are symbols with built-in assumptions of being real
     and nonnegative. The constructor handles formatting of the name.
     """
-    def __new__(cls, phase_name, multiplicity): #pylint: disable=W0221
-        varname = phase_name + str(multiplicity)
-        #pylint: disable=E1121
-        new_self = StateVariable.__new__(cls, varname, nonnegative=True)
-        new_self.phase_name = phase_name.upper()
+    def __new__(cls, phase_name):
+        namesplit = phase_name.split('#')
+        if len(namesplit) > 2:
+            raise ValueError('Invalid phase name for condition')
+        elif len(namesplit) == 2:
+            multiplicity = namesplit[1]
+        else:
+            multiplicity = 1
+        new_self = StateVariable.__new__(cls, namesplit[0], nonnegative=True)
+        new_self.phase_name = namesplit[0]
         new_self.multiplicity = multiplicity
         return new_self
 
     def __getnewargs__(self):
-        return self.phase_name, self.multiplicity
+        return self.phase_name + "#" + str(self.multiplicity)
 
     def _latex(self):
         "LaTeX representation."
         #pylint: disable=E1101
-        return 'f^{'+self.phase_name.replace('_', '-') + \
+        return 'n^{'+self.phase_name.replace('_', '-') + \
             '}_{'+str(self.multiplicity)+'}'
 
 class Composition(StateVariable):
@@ -248,6 +253,7 @@ entropy = S = StateVariable('S')
 pressure = P = StateVariable('P')
 volume = V = StateVariable('V')
 moles = N = StateVariable('N')
+phase_moles = NP = PhaseMoles
 site_fraction = Y = SiteFraction
 X = Composition
 MU = ChemicalPotential
