@@ -22,6 +22,7 @@ cdef public class CompositionSet(object)[type CompositionSetType, object Composi
         self._X_2d_view = <double[:self.X.shape[0],:1]>&self.X[0]
         self.energy = 0
         self.NP = 0
+        self.fixed = False
         self._energy_2d_view = <double[:1]>&self.energy
         self.grad = np.zeros(self.dof.shape[0])
         self._prev_energy = 0
@@ -41,13 +42,19 @@ cdef public class CompositionSet(object)[type CompositionSetType, object Composi
         other.energy = 1.0*self.energy
         other._energy_2d_view = <double[:1]>&other.energy
         other.NP = 1.0*self.NP
+        other.fixed = self.fixed
         other.grad[:] = self.grad
         other.hess[:,:] = self.hess
         return other
 
     def __repr__(self):
-        return str(self.__class__.__name__) + "({0}, {1}, NP={2}, GM={3})".format(self.phase_record.phase_name,
-                                                                          np.asarray(self.X), self.NP, self.energy)
+        if self.fixed:
+            fixed_str = " [fixed]"
+        else:
+            fixed_str = ""
+        return str(self.__class__.__name__) + "({0}, {1}, NP={2}{3}, GM={4})".format(self.phase_record.phase_name,
+                                                                          np.asarray(self.X), self.NP,
+                                                                                     fixed_str, self.energy)
 
     cdef void reset(self):
         self.zero_seen = 0
