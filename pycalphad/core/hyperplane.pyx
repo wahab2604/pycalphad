@@ -51,6 +51,8 @@ cpdef double hyperplane(double[:,::1] compositions,
                         double total_moles,
                         size_t[::1] fixed_chempot_indices,
                         size_t[::1] fixed_comp_indices,
+                        size_t[::1] fixed_phase_indices,
+                        double[::1] fixed_phase_amounts,
                         double[::1] result_fractions,
                         int[::1] result_simplex) except *:
     """
@@ -78,6 +80,11 @@ cpdef double hyperplane(double[:,::1] compositions,
         Variable shape from (0,) to (N-1,)
     fixed_comp_indices : ndarray
         Variable shape from (0,) to (N-1,)
+    fixed_phase_indices : ndarray
+        Indices into M-dimension which are constrained to be in the system.
+        Variable shape from (0,) to (N-1,)
+    fixed_phase_amounts : ndarray
+        Same shape as 'fixed_phase_indices'
     result_fractions : ndarray
         Relative amounts of the points making up the hyperplane simplex. Shape of (P,).
         Will be overwritten. Output sums to 1.
@@ -131,7 +138,7 @@ cpdef double hyperplane(double[:,::1] compositions,
     cdef int min_df
     cdef int max_iterations = 1000
     cdef int iterations = 0
-    cdef int idx, ici, comp_idx, simplex_idx, trial_idx, chempot_idx
+    cdef int idx, ici, fpi, comp_idx, simplex_idx, trial_idx, chempot_idx
 
     while iterations < max_iterations:
         iterations += 1
@@ -153,9 +160,13 @@ cpdef double hyperplane(double[:,::1] compositions,
                 ici = included_composition_indices[simplex_idx]
                 if ici >= 0:
                     fractions[trial_idx, simplex_idx] = composition[ici]
+                    for fpi in range(fixed_phase_indices.shape[0]):
+                        fractions[trial_idx, simplex_idx] -= fixed_phase_amounts[fpi] * compositions[fpi, ici]
                 else:
                     # ici = -1, refers to N=1 condition
                     fractions[trial_idx, simplex_idx] = total_moles
+                    for fpi in range(fixed_phase_indices.shape[0]):
+                        fractions[trial_idx, simplex_idx] -= fixed_phase_amounts[fpi]
             solve(f_contig_trial, fractions[trial_idx, :], int_tmp)
             smallest_fractions[trial_idx] = min(fractions[trial_idx, :])
             if iterations > 1:
@@ -210,4 +221,8 @@ cpdef double hyperplane(double[:,::1] compositions,
     # Hack to enforce Gibbs phase rule, shape of result is comp+1, shape of hyperplane is comp
     result_fractions[simplex_size:] = 0.0
     result_simplex[simplex_size:] = 0
+    for fpi in range(fixed_phase_indices.shape[0]):
+        result_fractions[simplex_size+fpi] = fixed_phase_amounts[fpi]
+        result_simplex[simplex_size+fpi] = fixed_phase_indices[fpi]
+        out_energy += fixed_phase_amounts[fpi] * energies[fpi]
     return out_energy

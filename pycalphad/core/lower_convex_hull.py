@@ -72,8 +72,13 @@ def lower_convex_hull(global_grid, state_variables, result_array):
     if len(pot_conds) > 0:
         cart_pot_values = cartesian([result_array.coords[cond] for cond in pot_conds])
 
+    specified_conds = set(result_array.coords.keys())
+    unspecified_statevars = set(str(x) for x in state_variables) - specified_conds
+    free_statevars = {x for x in unspecified_statevars}
+
     def force_indep_align(da):
-        return da.transpose(*itertools.chain(indep_conds + [x for x in da.dims if x not in indep_conds]))
+        return da.transpose(*itertools.chain(sorted(set(indep_conds) - free_statevars) +
+                                             [x for x in da.dims if x not in indep_conds]))
     result_array['GM'] = force_indep_align(result_array.GM)
     result_array['points'] = force_indep_align(result_array.points)
     result_array['MU'] = force_indep_align(result_array.MU)
@@ -81,6 +86,10 @@ def lower_convex_hull(global_grid, state_variables, result_array):
     result_array['X'] = force_indep_align(result_array.X)
     result_array['Y'] = force_indep_align(result_array.Y)
     result_array['Phase'] = force_indep_align(result_array.Phase)
+
+    for free_statevar in free_statevars:
+        # Use of getitem to avoid xarray.Dataset.T, which is a transpose operation in xarray<0.11
+        result_array[free_statevar] = force_indep_align(result_array.__getitem__(free_statevar))
     # factored out via profiling
     result_array_GM_values = result_array.GM.values
     result_array_points_values = result_array.points.values
@@ -89,16 +98,21 @@ def lower_convex_hull(global_grid, state_variables, result_array):
     result_array_X_values = result_array.X.values
     result_array_Y_values = result_array.Y.values
     result_array_Phase_values = result_array.Phase.values
-    global_grid_GM_values = global_grid.GM.values
-    global_grid_X_values = global_grid.X.values
     num_comps = result_array.dims['component']
 
     it = np.nditer(result_array_GM_values, flags=['multi_index'])
     comp_coord_shape = tuple(len(result_array.coords[cond]) for cond in comp_conds)
     pot_coord_shape = tuple(len(result_array.coords[cond]) for cond in pot_conds)
     while not it.finished:
-        indep_idx = tuple(idx for idx, key in zip(it.multi_index, result_array.GM.dims) if key in indep_conds)
-        grid = global_grid.isel(**dict(zip(indep_conds, indep_idx)))
+        grid_idx = []
+        for statevar in indep_conds:
+            if statevar in free_statevars:
+                grid_idx.append(0)
+            else:
+                grid_idx.append(it.multi_index[result_array.GM.dims.index(statevar)])
+        grid_idx = tuple(grid_idx)
+
+        grid = global_grid.isel(**dict(zip(indep_conds, grid_idx)))
         if len(comp_conds) > 0:
             comp_idx = np.ravel_multi_index(tuple(idx for idx, key in zip(it.multi_index, result_array.GM.dims) if key in comp_conds), comp_coord_shape)
             idx_comp_values = comp_values[comp_idx, :]
@@ -110,22 +124,43 @@ def lower_convex_hull(global_grid, state_variables, result_array):
 
         idx_global_grid_X_values = grid.X.values
         idx_global_grid_GM_values = grid.GM.values
+        idx_global_grid_Phase_values = grid.Phase.values
         idx_result_array_MU_values = result_array_MU_values[it.multi_index]
         idx_result_array_MU_values[:] = 0
         for idx in range(len(pot_conds_indices)):
             idx_result_array_MU_values[pot_conds_indices[idx]] = idx_pot_values[idx]
         idx_result_array_NP_values = result_array_NP_values[it.multi_index]
         idx_result_array_points_values = result_array_points_values[it.multi_index]
+
+        # This is a hack to make NP conditions work
+        # Rigorously, we should perform a step/map calculation at the default_value to find all the composition sets
+        # "Fixing" a miscibility gap will require a more sophisticated approach
+        # If user-specified composition sets were supported, this is where that input would be used
+        fixed_phase_indices = []
+        fixed_phase_amounts = []
+        for cond in result_array.coords.keys():
+            if cond.startswith('NP_'):
+                phase_name = cond.split('_')[1]
+                phase_grid = np.flatnonzero(idx_global_grid_Phase_values == phase_name)
+                first, last = phase_grid[0], phase_grid[-1]
+                # Choose fixed phase composition as minimum energy value from the grid
+                fixed_index = np.argmin(idx_global_grid_GM_values[first:last+1]) + first
+                fixed_phase_indices.append(fixed_index)
+                fixed_phase_amounts.append(result_array.coords[cond].values[it.multi_index[result_array.GM.dims.index(cond)]])
+        fixed_phase_indices = np.array(fixed_phase_indices, dtype=np.uint64)
+        fixed_phase_amounts = np.array(fixed_phase_amounts)
+
         result_array_GM_values[it.multi_index] = \
             hyperplane(idx_global_grid_X_values, idx_global_grid_GM_values,
                        idx_comp_values, idx_result_array_MU_values, float(grid.N),
                        pot_conds_indices, comp_conds_indices,
+                       fixed_phase_indices, fixed_phase_amounts,
                        idx_result_array_NP_values, idx_result_array_points_values)
         # Copy phase values out
         points = result_array_points_values[it.multi_index]
-        result_array_Phase_values[it.multi_index][:num_comps] = global_grid.Phase.values[indep_idx].take(points, axis=0)[:num_comps]
-        result_array_X_values[it.multi_index][:num_comps] = global_grid.X.values[indep_idx].take(points, axis=0)[:num_comps]
-        result_array_Y_values[it.multi_index][:num_comps] = global_grid.Y.values[indep_idx].take(points, axis=0)[:num_comps]
+        result_array_Phase_values[it.multi_index][:num_comps] = global_grid.Phase.values[grid_idx].take(points, axis=0)[:num_comps]
+        result_array_X_values[it.multi_index][:num_comps] = global_grid.X.values[grid_idx].take(points, axis=0)[:num_comps]
+        result_array_Y_values[it.multi_index][:num_comps] = global_grid.Y.values[grid_idx].take(points, axis=0)[:num_comps]
         # Special case: Sometimes fictitious points slip into the result
         if '_FAKE_' in result_array_Phase_values[it.multi_index]:
             new_energy = 0.
