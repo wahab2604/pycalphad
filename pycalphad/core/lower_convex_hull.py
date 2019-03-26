@@ -140,7 +140,8 @@ def lower_convex_hull(global_grid, state_variables, result_array):
         fixed_phase_amounts = []
         for cond in result_array.coords.keys():
             if cond.startswith('NP_'):
-                phase_name = cond.split('_')[1]
+                # Note: Does not yet support NP(Phase#2) type notation
+                phase_name = cond[3:]
                 phase_grid = np.flatnonzero(idx_global_grid_Phase_values == phase_name)
                 first, last = phase_grid[0], phase_grid[-1]
                 # Choose fixed phase composition as minimum energy value from the grid
@@ -157,10 +158,10 @@ def lower_convex_hull(global_grid, state_variables, result_array):
                        fixed_phase_indices, fixed_phase_amounts,
                        idx_result_array_NP_values, idx_result_array_points_values)
         # Copy phase values out
-        points = result_array_points_values[it.multi_index]
-        result_array_Phase_values[it.multi_index][:num_comps] = global_grid.Phase.values[grid_idx].take(points, axis=0)[:num_comps]
-        result_array_X_values[it.multi_index][:num_comps] = global_grid.X.values[grid_idx].take(points, axis=0)[:num_comps]
-        result_array_Y_values[it.multi_index][:num_comps] = global_grid.Y.values[grid_idx].take(points, axis=0)[:num_comps]
+        points = idx_result_array_points_values
+        result_array_Phase_values[it.multi_index] = global_grid.Phase.values[grid_idx].take(points, axis=0)
+        result_array_X_values[it.multi_index] = global_grid.X.values[grid_idx].take(points, axis=0)
+        result_array_Y_values[it.multi_index] = global_grid.Y.values[grid_idx].take(points, axis=0)
         # Special case: Sometimes fictitious points slip into the result
         if '_FAKE_' in result_array_Phase_values[it.multi_index]:
             new_energy = 0.
