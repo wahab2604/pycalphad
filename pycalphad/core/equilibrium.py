@@ -249,20 +249,17 @@ def equilibrium(dbf, comps, phases, conditions, output=None, model=None,
                                         build_gradients=True, build_hessians=need_hessians)
 
     # When P or T is a free variable, we still need to choose a value for starting point selection.
-    unspecified_statevars = set()
-    for x in conds.keys():
-        if (getattr(v, str(x), None) is not None) and not isinstance(x, (v.ChemicalPotential, v.PhaseMoles)):
-            unspecified_statevars |= {x}
-    default_statevars = {x: [x.default_value] for x in unspecified_statevars}
+    specified_conds = set(conds.keys())
+    unspecified_statevars = set(state_variables) - specified_conds
+    free_statevars = {str(x): [x.default_value] for x in unspecified_statevars}
 
     if verbose:
         print('[done]', end='\n')
 
     # 'calculate' accepts conditions through its keyword arguments
     grid_opts = calc_opts.copy()
-    statevar_strings = [str(x) for x in state_variables]
-    grid_opts.update({key: value for key, value in str_conds.items() if key in statevar_strings})
-    grid_opts.update(default_statevars)
+    grid_opts.update({key: value for key, value in str_conds.items() if key in [str(x) for x in state_variables]})
+    grid_opts.update(free_statevars)
     if 'pdens' not in grid_opts:
         grid_opts['pdens'] = 500
     grid = delayed(calculate, pure=False)(dbf, comps, active_phases,

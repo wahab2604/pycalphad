@@ -257,6 +257,7 @@ pressure = P = StateVariable('P')
 pressure.default_value = 101325
 volume = V = StateVariable('V')
 moles = N = StateVariable('N')
+moles.default_value = 1
 phase_moles = NP = PhaseMoles
 site_fraction = Y = SiteFraction
 X = Composition
