@@ -46,6 +46,7 @@ cdef class Problem:
         cdef int constraint_idx = 0
         cdef int var_idx = 0
         cdef int phase_idx = 0
+        cdef int fpi
         cdef double indep_sum = sum([float(val) for i, val in conditions.items() if i.startswith('X_')])
         cdef object multiphase_rhs = get_multiphase_constraint_rhs(conditions)
         cdef object dependent_comp
@@ -53,7 +54,8 @@ cdef class Problem:
             raise ValueError('Number of phases is zero')
         state_variables = comp_sets[0].phase_record.state_variables
         fixed_statevars = [(key, value) for key, value in conditions.items() if key in [str(k) for k in state_variables]]
-        num_fixed_dof_cons = len(state_variables)
+        fixed_phase_amounts = [val for i, val in conditions.items() if i.startswith('NP_')]
+        num_fixed_dof_cons = len(fixed_statevars) + len(fixed_phase_amounts)
 
         self.composition_sets = comp_sets
         self.conditions = conditions
@@ -70,13 +72,16 @@ cdef class Problem:
         self.num_internal_constraints = num_internal_cons
         self.num_fixed_dof_constraints = num_fixed_dof_cons
         self.fixed_dof_indices = np.zeros(self.num_fixed_dof_constraints, dtype=np.int32)
-        # TODO: Need to add phase fractions to support them as a fixed dof!
         all_dof = list(str(k) for k in state_variables)
-        for compset in comp_sets:
-            all_dof.extend(compset.phase_record.variables)
         for i, s in enumerate(fixed_statevars):
             k, v = s
             self.fixed_dof_indices[i] = all_dof.index(k)
+        fpi = 0
+        for phase_idx, compset in enumerate(comp_sets):
+            all_dof.extend(compset.phase_record.variables)
+            if compset.fixed:
+                self.fixed_dof_indices[len(fixed_statevars)+fpi] = self.num_vars - self.num_phases + phase_idx
+                fpi += 1
         self.num_constraints = num_constraints
         self.xl = np.r_[np.full(self.num_vars - self.num_phases, MIN_SITE_FRACTION),
                         np.full(self.num_phases, MIN_PHASE_FRACTION)]
@@ -86,18 +91,17 @@ cdef class Problem:
         for var_idx in range(len(state_variables)):
             self.x0[var_idx] = comp_sets[0].dof[var_idx]
         var_idx = len(state_variables)
-        for compset in self.composition_sets:
+        for phase_idx, compset in enumerate(self.composition_sets):
             self.x0[var_idx:var_idx+compset.phase_record.phase_dof] = compset.dof[len(state_variables):]
             self.x0[self.num_vars-self.num_phases+phase_idx] = compset.NP
             var_idx += compset.phase_record.phase_dof
-            phase_idx += 1
         self.cl = np.zeros(num_constraints)
         self.cu = np.zeros(num_constraints)
         compset = comp_sets[0]
         # Fixed dof
         for var_idx in range(num_fixed_dof_cons):
-            self.cl[var_idx] = fixed_statevars[var_idx][1]
-            self.cu[var_idx] = fixed_statevars[var_idx][1]
+            self.cl[var_idx] = self.x0[self.fixed_dof_indices[var_idx]]
+            self.cu[var_idx] = self.x0[self.fixed_dof_indices[var_idx]]
         for var_idx in range(num_fixed_dof_cons, num_internal_cons + num_fixed_dof_cons):
             self.cl[var_idx] = 0
             self.cu[var_idx] = 0
