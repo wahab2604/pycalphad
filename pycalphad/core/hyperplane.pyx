@@ -161,7 +161,7 @@ cpdef double hyperplane(double[:,::1] compositions,
                 if ici >= 0:
                     fractions[trial_idx, simplex_idx] = composition[ici]
                     for fpi in range(fixed_phase_indices.shape[0]):
-                        fractions[trial_idx, simplex_idx] -= fixed_phase_amounts[fpi] * compositions[fpi, ici]
+                        fractions[trial_idx, simplex_idx] -= fixed_phase_amounts[fpi] * compositions[fixed_phase_indices[fpi], ici]
                 else:
                     # ici = -1, refers to N=1 condition
                     fractions[trial_idx, simplex_idx] = total_moles
@@ -224,5 +224,5 @@ cpdef double hyperplane(double[:,::1] compositions,
     for fpi in range(fixed_phase_indices.shape[0]):
         result_fractions[simplex_size+fpi] = fixed_phase_amounts[fpi]
         result_simplex[simplex_size+fpi] = fixed_phase_indices[fpi]
-        out_energy += fixed_phase_amounts[fpi] * energies[fpi]
+        out_energy += fixed_phase_amounts[fpi] * energies[fixed_phase_indices[fpi]]
     return out_energy
