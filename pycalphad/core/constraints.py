@@ -70,7 +70,6 @@ def build_constraints(mod, variables, conds, parameters=None):
     internal_constraints = [INTERNAL_CONSTRAINT_SCALING*x for x in internal_constraints]
     multiphase_constraints = mod.get_multiphase_constraints(conds)
     multiphase_constraints = [MULTIPHASE_CONSTRAINT_SCALING*x for x in multiphase_constraints]
-    # TODO: Conditions needing Hessians should probably have a 'second-order' tag or something
     need_hess = any(type(c) in v.CONDITIONS_REQUIRING_HESSIANS for c in conds.keys())
     cf_output = _build_constraint_functions(variables, internal_constraints,
                                             include_hess=need_hess, parameters=parameters)
