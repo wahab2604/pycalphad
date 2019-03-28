@@ -595,16 +595,21 @@ cdef class Problem:
                 tmp_energy[0] = 0
                 compset.phase_record.obj(tmp_energy, x_tmp_view)
                 compset.phase_record.grad(grad_tmp, x_tmp)
-                for iter_idx in range(num_statevars+compset.phase_record.phase_dof):
+                for iter_idx in range(num_statevars):
                     constraint_jac[constraint_offset, iter_idx] = grad_tmp[iter_idx]
+                for iter_idx in range(compset.phase_record.phase_dof):
+                    constraint_jac[constraint_offset, var_idx+iter_idx] = grad_tmp[num_statevars+iter_idx]
                 for comp_idx in range(chempot_grad.shape[0]):
                     moles_view = <double[:1]>&moles[comp_idx]
                     mass_grad_view = <double[:num_statevars+compset.phase_record.phase_dof]>&mass_grad_tmp[comp_idx, 0]
                     compset.phase_record.mass_obj(moles_view, x_tmp_view, comp_idx)
                     compset.phase_record.mass_grad(mass_grad_view, x_tmp, comp_idx)
-                    for iter_idx in range(num_statevars+compset.phase_record.phase_dof):
+                    for iter_idx in range(num_statevars):
                         constraint_jac[constraint_offset, iter_idx] -= (chempots[comp_idx] * mass_grad_view[iter_idx] + \
-                                                                       chempot_grad[comp_idx, iter_idx] * moles[comp_idx]) / (8.3145 * x[2])
+                                                                       chempot_grad[comp_idx, iter_idx] * moles[comp_idx])
+                    for iter_idx in range(compset.phase_record.phase_dof):
+                        constraint_jac[constraint_offset, var_idx+iter_idx] -= (chempots[comp_idx] * mass_grad_view[num_statevars+iter_idx] + \
+                                                                                chempot_grad[comp_idx, num_statevars+iter_idx] * moles[comp_idx])
 
                 moles[:] = 0
                 mass_grad_tmp[:,:] = 0
