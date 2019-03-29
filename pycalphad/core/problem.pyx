@@ -605,11 +605,11 @@ cdef class Problem:
                     compset.phase_record.mass_obj(moles_view, x_tmp_view, comp_idx)
                     compset.phase_record.mass_grad(mass_grad_view, x_tmp, comp_idx)
                     for iter_idx in range(num_statevars):
-                        constraint_jac[constraint_offset, iter_idx] -= (chempots[comp_idx] * mass_grad_view[iter_idx] + \
-                                                                       chempot_grad[comp_idx, iter_idx] * moles[comp_idx])
+                        constraint_jac[constraint_offset, iter_idx] -= chempots[comp_idx] * mass_grad_view[iter_idx]
                     for iter_idx in range(compset.phase_record.phase_dof):
-                        constraint_jac[constraint_offset, var_idx+iter_idx] -= (chempots[comp_idx] * mass_grad_view[num_statevars+iter_idx] + \
-                                                                                chempot_grad[comp_idx, num_statevars+iter_idx] * moles[comp_idx])
+                        constraint_jac[constraint_offset, var_idx+iter_idx] -= chempots[comp_idx] * mass_grad_view[num_statevars+iter_idx]
+                    for iter_idx in range(self.num_vars):
+                        constraint_jac[constraint_offset, iter_idx] -= chempot_grad[comp_idx, iter_idx] * moles[comp_idx]
 
                 moles[:] = 0
                 mass_grad_tmp[:,:] = 0
