@@ -312,7 +312,9 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
         # Starting point selection should have the last "num_fixed_phases" as the fixed ones
         for idx in range(num_fixed_phases):
             composition_sets[-1 - idx].fixed = True
+        print('Composition Sets', composition_sets)
         chemical_potentials = prop_MU_values[it.multi_index]
+        print('Chemical Potentials', np.array(chemical_potentials))
         energy = prop_GM_values[it.multi_index]
         # Remove duplicate phases -- we will add them back later
         remove_degenerate_phases(composition_sets, [], 0.5, 100, verbose)
