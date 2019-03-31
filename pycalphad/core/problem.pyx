@@ -67,7 +67,7 @@ cdef class Problem:
         self.fixed_chempot_values = np.array([float(value) for key, value in conditions.items() if key.startswith('MU_')])
         num_constraints = num_fixed_dof_cons + num_internal_cons + \
                           len(get_multiphase_constraint_rhs(conditions)) + len(self.fixed_chempot_indices) + \
-                          len(fixed_phase_amounts)
+                          2 * len(fixed_phase_amounts)
         self.num_phases = len(self.composition_sets)
         self.num_vars = sum(compset.phase_record.phase_dof for compset in comp_sets) + self.num_phases + len(state_variables)
         self.num_internal_constraints = num_internal_cons
@@ -87,8 +87,10 @@ cdef class Problem:
         self.num_constraints = num_constraints
         self.xl = np.r_[np.full(self.num_vars - self.num_phases, MIN_SITE_FRACTION),
                         np.full(self.num_phases, MIN_PHASE_FRACTION)]
+        self.xl[2] = 300 # XXX: Make this more reasonable
         self.xu = np.r_[np.ones(self.num_vars - self.num_phases)*2e19,
                         np.ones(self.num_phases)*2e19]
+        self.xu[2] = 2000 # XXX: Make this more reasonable
         self.x0 = np.zeros(self.num_vars)
         for var_idx in range(len(state_variables)):
             self.x0[var_idx] = comp_sets[0].dof[var_idx]
@@ -118,8 +120,8 @@ cdef class Problem:
         # Phase stability constraints
         for var_idx in range(num_internal_cons + num_fixed_dof_cons + len(multiphase_rhs) + len(self.fixed_chempot_indices),
                              num_constraints):
-            self.cl[var_idx] = 0
-            self.cu[var_idx] = 0
+            self.cl[var_idx] = -100 # XXX: Need to choose these values in an intelligent way
+            self.cu[var_idx] = 100
 
     def objective(self, x_in):
         cdef CompositionSet compset
@@ -147,7 +149,7 @@ cdef class Problem:
             tmp = 0
         return total_obj
 
-    def gradient(self, x_in):
+    def gradient(self, x_in, free_only=False, selected_phase=None):
         cdef CompositionSet compset = self.composition_sets[0]
         cdef int phase_idx = 0
         cdef int num_statevars = len(compset.phase_record.state_variables)
@@ -165,6 +167,12 @@ cdef class Problem:
         cdef np.ndarray[ndim=1, dtype=np.float64_t] gradient_term = np.zeros(self.num_vars)
 
         for compset in self.composition_sets:
+            #if compset.fixed and free_only:
+            #    var_offset += compset.phase_record.phase_dof
+            #    continue
+            #if (selected_phase is not None) and (selected_phase != phase_idx):
+            #    var_offset += compset.phase_record.phase_dof
+            #    continue
             x = np.r_[x_in[:num_statevars], x_in[var_offset:var_offset+compset.phase_record.phase_dof]]
             dof_2d_view = <double[:1,:x.shape[0]]>&x[0]
             compset.phase_record.obj(energy_2d_view, dof_2d_view)
@@ -185,7 +193,7 @@ cdef class Problem:
         gradient_term[np.isnan(gradient_term)] = 0
         return gradient_term
 
-    def hessian(self, x_in):
+    def hessian(self, x_in, free_only=False, selected_phase=None):
         cdef CompositionSet compset = self.composition_sets[0]
         cdef size_t num_statevars = len(compset.phase_record.state_variables)
         cdef double[:, ::1] hess = np.zeros((self.num_vars, self.num_vars))
@@ -203,6 +211,12 @@ cdef class Problem:
         var_idx = num_statevars
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
+            #if compset.fixed and free_only:
+            #    var_idx += compset.phase_record.phase_dof
+            #    continue
+            #if (selected_phase is not None) and (selected_phase != phase_idx):
+            #    var_idx += compset.phase_record.phase_dof
+            #    continue
             phase_frac = x[self.num_vars - self.num_phases + phase_idx]
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                 x[var_idx:var_idx+compset.phase_record.phase_dof]
@@ -241,7 +255,29 @@ cdef class Problem:
             var_idx += compset.phase_record.phase_dof
         return np.array(hess)
 
-    def mass_gradient(self, x_in):
+    def moles(self, x_in):
+        cdef CompositionSet compset = self.composition_sets[0]
+        cdef int num_statevars = len(compset.phase_record.state_variables)
+        cdef double[::1] result = np.zeros(len(self.nonvacant_elements))
+        cdef int phase_idx, comp_idx, dof_idx, spidx
+        cdef double[::1] x = np.array(x_in)
+        cdef double[::1] x_tmp
+        cdef double[:,::1] x_tmp_2d_view
+        cdef double[::1] out_phase_mass = np.atleast_1d(0.)
+        var_idx = num_statevars
+        for phase_idx in range(self.num_phases):
+            compset = self.composition_sets[phase_idx]
+            spidx = self.num_vars - self.num_phases + phase_idx
+            x_tmp = np.r_[x[:num_statevars], x[var_idx:var_idx+compset.phase_record.phase_dof]]
+            x_tmp_2d_view = <double[:1,:num_statevars+compset.phase_record.phase_dof]>&x_tmp[0]
+            for comp_idx in range(result.shape[0]):
+                compset.phase_record.mass_obj(out_phase_mass, x_tmp_2d_view, comp_idx)
+                result[comp_idx] += x[spidx] * out_phase_mass[0]
+                out_phase_mass[0] = 0
+            var_idx += compset.phase_record.phase_dof
+        return np.array(result)
+
+    def mass_gradient(self, x_in, free_only=False, selected_phase=None):
         cdef CompositionSet compset = self.composition_sets[0]
         cdef int num_statevars = len(compset.phase_record.state_variables)
         cdef double[:, :,::1] mass_gradient_matrix = np.zeros((self.num_phases, len(self.nonvacant_elements), self.num_vars))
@@ -253,6 +289,12 @@ cdef class Problem:
         var_idx = num_statevars
         for phase_idx in range(mass_gradient_matrix.shape[0]):
             compset = self.composition_sets[phase_idx]
+            if compset.fixed and free_only:
+                var_idx += compset.phase_record.phase_dof
+                continue
+            if (selected_phase is not None) and (selected_phase != phase_idx):
+                var_idx += compset.phase_record.phase_dof
+                continue
             spidx = self.num_vars - self.num_phases + phase_idx
             x_tmp = np.r_[x[:num_statevars], x[var_idx:var_idx+compset.phase_record.phase_dof]]
             x_tmp_2d_view = <double[:1,:num_statevars+compset.phase_record.phase_dof]>&x_tmp[0]
@@ -269,7 +311,7 @@ cdef class Problem:
             var_idx += compset.phase_record.phase_dof
         return np.array(mass_gradient_matrix).sum(axis=0).T
 
-    def mass_jacobian(self, x_in):
+    def mass_jacobian(self, x_in, free_only=False, selected_phase=None):
         """For chemical potential calculation."""
         cdef CompositionSet compset = self.composition_sets[0]
         cdef int num_statevars = len(compset.phase_record.state_variables)
@@ -306,27 +348,27 @@ cdef class Problem:
             mass_jac[constraint_offset, active_ineq[idx]] = 1
             constraint_offset += 1
         # Third: Mass constraints for pure elements
-        mass_grad = self.mass_gradient(x_in).T
+        mass_grad = self.mass_gradient(x_in, free_only=free_only, selected_phase=selected_phase).T
         var_idx = 0
         for grad_idx in range(constraint_offset, mass_jac.shape[0]):
             for var_idx in range(self.num_vars):
                 mass_jac[grad_idx, var_idx] = mass_grad[grad_idx - constraint_offset, var_idx]
         return np.array(mass_jac)
 
-    def chemical_potentials(self, x_in):
+    def chemical_potentials(self, x_in, free_only=False, selected_phase=None):
         "Assuming the input is a feasible solution."
         # mu = (A+) grad
-        jac_pinv = np.linalg.pinv(self.mass_jacobian(x_in).T)
-        mu = np.dot(jac_pinv, self.gradient(x_in))[-len(self.nonvacant_elements):]
+        jac_pinv = np.linalg.pinv(self.mass_jacobian(x_in, free_only=free_only, selected_phase=selected_phase).T)
+        mu = np.dot(jac_pinv, self.gradient(x_in, free_only=free_only, selected_phase=selected_phase))[-len(self.nonvacant_elements):]
         return mu
 
-    def chemical_potential_gradient(self, x_in):
+    def chemical_potential_gradient(self, x_in, free_only=False, selected_phase=None):
         "Assuming the input is a feasible solution."
         # mu' = (A+)' grad + (A+) hess
-        jac = self.mass_jacobian(x_in).T
+        jac = self.mass_jacobian(x_in, free_only=free_only, selected_phase=selected_phase).T
         jac_pinv = np.linalg.pinv(jac)
         #mass_hess = np.swapaxes(self.mass_cons_hessian(x_in), 0, 1)
-        hess = self.hessian(x_in)
+        hess = self.hessian(x_in, free_only=free_only, selected_phase=selected_phase)
         #jac_pinv_prime = _pinv_derivative(jac, jac_pinv, mass_hess)
         mu_prime = np.dot(jac_pinv, hess)
         return mu_prime[-len(self.nonvacant_elements):]
@@ -479,13 +521,15 @@ cdef class Problem:
             var_offset += compset.phase_record.phase_dof
         constraint_offset += compset.phase_record.num_multiphase_cons
 
-        if len(self.fixed_chempot_indices) > 0 or len(self.fixed_phase_amounts) > 0:
+        if len(self.fixed_chempot_indices) > 0:
             chempots = self.chemical_potentials(x_in)
         # Fourth: Chemical potential constraints
         for idx in range(self.fixed_chempot_indices.shape[0]):
             l_constraints[constraint_offset] = CHEMPOT_CONSTRAINT_SCALING * chempots[self.fixed_chempot_indices[idx]]
             constraint_offset += 1
-        # Fifth: Phase stability constraints
+        # Fifth: Free-phase hyperplane wrt fixed-phase energy
+        if len(self.fixed_phase_amounts) > 0:
+            chempots = self.chemical_potentials(x_in, free_only=True)
         var_idx = num_statevars
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
@@ -500,6 +544,16 @@ cdef class Problem:
                     tmp_1d_view = <double[:1]>&moles[comp_idx]
                     compset.phase_record.mass_obj(tmp_1d_view, x_tmp_view, comp_idx)
                     l_constraints[constraint_offset] -= chempots[comp_idx] * moles[comp_idx]
+                constraint_offset += 1
+            var_idx += compset.phase_record.phase_dof
+        # Sixth: Fixed-phase hyperplane wrt total energy
+        energy = self.objective(x_in)
+        var_idx = num_statevars
+        for phase_idx in range(self.num_phases):
+            compset = self.composition_sets[phase_idx]
+            if compset.fixed:
+                l_constraints[constraint_offset] = energy - np.dot(self.chemical_potentials(x_in, selected_phase=phase_idx),
+                                                                   self.moles(x_in))
                 constraint_offset += 1
             var_idx += compset.phase_record.phase_dof
         return np.array(l_constraints)
@@ -576,15 +630,16 @@ cdef class Problem:
         constraint_offset += compset.phase_record.num_multiphase_cons
 
 
-        if len(self.fixed_chempot_indices) > 0  or len(self.fixed_phase_amounts) > 0:
+        if len(self.fixed_chempot_indices) > 0:
             chempot_grad = self.chemical_potential_gradient(x_in)
-        if len(self.fixed_phase_amounts) > 0:
-            chempots = self.chemical_potentials(x_in)
         # Fourth: Chemical potential constraints
         for idx in range(self.fixed_chempot_indices.shape[0]):
             constraint_jac[constraint_offset, :] = CHEMPOT_CONSTRAINT_SCALING * chempot_grad[self.fixed_chempot_indices[idx], :]
             constraint_offset += 1
-        # Fifth: Phase stability constraints
+        # Fifth: Free-phase hyperplane wrt fixed-phase energy
+        if len(self.fixed_phase_amounts) > 0:
+            chempot_grad = self.chemical_potential_gradient(x_in, free_only=True)
+            chempots = self.chemical_potentials(x_in, free_only=True)
         var_idx = num_statevars
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
@@ -613,6 +668,18 @@ cdef class Problem:
 
                 moles[:] = 0
                 mass_grad_tmp[:,:] = 0
+                constraint_offset += 1
+            var_idx += compset.phase_record.phase_dof
+        # Sixth: Fixed-phase hyperplane wrt total energy
+        gradient = self.gradient(x_in)
+        var_idx = num_statevars
+        for phase_idx in range(self.num_phases):
+            compset = self.composition_sets[phase_idx]
+            if compset.fixed:
+                res1 = np.dot(self.mass_gradient(x_in), self.chemical_potentials(x_in, selected_phase=phase_idx))
+                res2 = np.dot(self.chemical_potential_gradient(x_in, selected_phase=phase_idx).T, self.moles(x_in))
+                for iter_idx in range(self.num_vars):
+                    constraint_jac[constraint_offset, iter_idx] = gradient[iter_idx] - res1[iter_idx] - res2[iter_idx]
                 constraint_offset += 1
             var_idx += compset.phase_record.phase_dof
         return np.array(constraint_jac)

@@ -70,13 +70,15 @@ class InteriorPointSolver(SolverBase):
         # set default options
         self.ipopt_options = {
             'max_iter': 200,
-            'print_level': 0,
+            'print_level': 6,
             # This option improves convergence when using L-BFGS
             'limited_memory_max_history': 100,
             'tol': 1e-1,
             'constr_viol_tol': 1e-5,
             'nlp_scaling_method': 'none',
-            'hessian_approximation': 'limited-memory'
+            'hessian_approximation': 'limited-memory',
+            'derivative_test': 'first-order',
+            'point_perturbation_radius': 0.0,
         }
         if not self.verbose:
             # suppress the "This program contains Ipopt" banner
@@ -168,7 +170,7 @@ class InteriorPointSolver(SolverBase):
             converged = True
         if self.verbose:
             print('Chemical Potentials', chemical_potentials)
-            print(info['mult_x_L'])
+            print(prob.constraints(x))
             print(x)
             print('Status:', info['status'], info['status_msg'])
         return SolverResult(converged=converged, x=x, chemical_potentials=chemical_potentials)
