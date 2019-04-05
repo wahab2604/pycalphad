@@ -133,35 +133,47 @@ def lower_convex_hull(global_grid, state_variables, result_array):
         idx_result_array_points_values = result_array_points_values[it.multi_index]
 
         # This is a hack to make NP conditions work
+        # We add one of each phase to the system
         # Rigorously, we should perform a step/map calculation at the default_value to find all the composition sets
         # "Fixing" a miscibility gap will require a more sophisticated approach
         # If user-specified composition sets were supported, this is where that input would be used
-        fixed_phase_indices = []
-        fixed_phase_amounts = []
-        for cond in result_array.coords.keys():
-            if cond.startswith('NP_'):
+        fixed_phases_present = any(cond.startswith('NP_') for cond in result_array.coords.keys())
+        if fixed_phases_present:
+            fixed_phase_indices = []
+            fixed_phase_amounts = []
+            fixed_phase_energies = []
+            phases = sorted(set(np.unique(idx_global_grid_Phase_values)) - {'', '_FAKE_'})
+            for phase_name in phases:
                 # Note: Does not yet support NP(Phase#2) type notation
-                phase_name = cond[3:]
                 phase_grid = np.flatnonzero(idx_global_grid_Phase_values == phase_name)
                 first, last = phase_grid[0], phase_grid[-1]
                 # Choose fixed phase composition as minimum energy value from the grid
                 fixed_index = np.argmin(idx_global_grid_GM_values[first:last+1]) + first
                 fixed_phase_indices.append(fixed_index)
-                fixed_phase_amounts.append(result_array.coords[cond].values[it.multi_index[result_array.GM.dims.index(cond)]])
-        fixed_phase_indices = np.array(fixed_phase_indices, dtype=np.uint64)
-        fixed_phase_amounts = np.array(fixed_phase_amounts)
-
-        result_array_GM_values[it.multi_index] = \
-            hyperplane(idx_global_grid_X_values, idx_global_grid_GM_values,
-                       idx_comp_values, idx_result_array_MU_values, float(grid.N),
-                       pot_conds_indices, comp_conds_indices,
-                       fixed_phase_indices, fixed_phase_amounts,
-                       idx_result_array_NP_values, idx_result_array_points_values)
-        # Copy phase values out
-        points = idx_result_array_points_values
-        result_array_Phase_values[it.multi_index] = global_grid.Phase.values[grid_idx].take(points, axis=0)
-        result_array_X_values[it.multi_index] = global_grid.X.values[grid_idx].take(points, axis=0)
-        result_array_Y_values[it.multi_index] = global_grid.Y.values[grid_idx].take(points, axis=0)
+                if 'NP_' + phase_name in result_array.coords.keys():
+                    cond = 'NP_' + phase_name
+                    fixed_phase_amounts.append(result_array.coords[cond].values[it.multi_index[result_array.GM.dims.index(cond)]])
+                else:
+                    fixed_phase_amounts.append(1./len(phases))
+                fixed_phase_energies.append(float(idx_global_grid_GM_values[fixed_index]))
+            fixed_phase_indices = np.array(fixed_phase_indices, dtype=np.int64)
+            fixed_phase_amounts = np.array(fixed_phase_amounts)
+            result_array_GM_values[it.multi_index] = np.dot(fixed_phase_amounts, fixed_phase_energies)
+            # Copy phase values out
+            points = fixed_phase_indices
+            idx_result_array_NP_values[:len(fixed_phase_amounts)] = fixed_phase_amounts
+        else:
+            result_array_GM_values[it.multi_index] = \
+                hyperplane(idx_global_grid_X_values, idx_global_grid_GM_values,
+                           idx_comp_values, idx_result_array_MU_values, float(grid.N),
+                           pot_conds_indices, comp_conds_indices,
+                           np.array([]), np.array([]),
+                           idx_result_array_NP_values, idx_result_array_points_values)
+            # Copy phase values out
+            points = idx_result_array_points_values
+        result_array_Phase_values[it.multi_index][:len(points)] = global_grid.Phase.values[grid_idx].take(points, axis=0)
+        result_array_X_values[it.multi_index][:len(points),:] = global_grid.X.values[grid_idx].take(points, axis=0)
+        result_array_Y_values[it.multi_index][:len(points),:] = global_grid.Y.values[grid_idx].take(points, axis=0)
         # Special case: Sometimes fictitious points slip into the result
         if '_FAKE_' in result_array_Phase_values[it.multi_index]:
             new_energy = 0.
