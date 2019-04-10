@@ -64,8 +64,19 @@ def starting_point(conditions, state_variables, phase_records, grid):
     nonvacant_elements = phase_records[active_phases[0]].nonvacant_elements
     coord_dict = OrderedDict([(str(key), value) for key, value in conditions.items()])
     grid_shape = tuple(len(x) for x in coord_dict.values())
-    coord_dict['vertex'] = np.arange(
-        len(nonvacant_elements) + 1)  # +1 is to accommodate the degenerate degree of freedom at the invariant reactions
+
+    specified_conds = set(conditions.keys())
+    unspecified_statevars = set(state_variables) - specified_conds
+    free_statevars = {str(x): [float(x.default_value)] for x in unspecified_statevars}
+
+    if len(free_statevars) > 0:
+        # Allow a large number of phases for the starting point, since there is no global min
+        max_phases = max(len(active_phases), len(nonvacant_elements) + len(free_statevars))
+    else:
+        # +1 is to accommodate the degenerate degree of freedom at the invariant reactions
+        max_phases = len(nonvacant_elements) + 1
+
+    coord_dict['vertex'] = np.arange(max_phases)
     coord_dict['component'] = nonvacant_elements
     conds_as_strings = [str(k) for k in conditions.keys()]
     specified_elements = set()
@@ -78,22 +89,18 @@ def starting_point(conditions, state_variables, phase_records, grid):
     if len(dependent_comp) != 1:
         raise ValueError('Number of dependent components different from one')
 
-    arrays = {'NP':     (conds_as_strings + ['vertex'], np.empty(grid_shape + (len(nonvacant_elements)+1,))),
+    arrays = {'NP':     (conds_as_strings + ['vertex'], np.empty(grid_shape + (max_phases,))),
               'GM':     (conds_as_strings, np.empty(grid_shape)),
               'MU':     (conds_as_strings + ['component'], np.empty(grid_shape + (len(nonvacant_elements),))),
               'X':      (conds_as_strings + ['vertex', 'component'],
-                         np.empty(grid_shape + (len(nonvacant_elements)+1, len(nonvacant_elements),))),
+                         np.empty(grid_shape + (max_phases, len(nonvacant_elements),))),
               'Y':      (conds_as_strings + ['vertex', 'internal_dof'],
-                         np.empty(grid_shape + (len(nonvacant_elements)+1, maximum_internal_dof,))),
+                         np.empty(grid_shape + (max_phases, maximum_internal_dof,))),
               'Phase':  (conds_as_strings + ['vertex'],
-                         np.empty(grid_shape + (len(nonvacant_elements)+1,), dtype='U%s' % max_phase_name_len)),
+                         np.empty(grid_shape + (max_phases,), dtype='U%s' % max_phase_name_len)),
               'points': (conds_as_strings + ['vertex'],
-                         np.empty(grid_shape + (len(nonvacant_elements)+1,), dtype=np.int32))
+                         np.empty(grid_shape + (max_phases,), dtype=np.int32))
               }
-
-    specified_conds = set(conditions.keys())
-    unspecified_statevars = set(state_variables) - specified_conds
-    free_statevars = {str(x): [float(x.default_value)] for x in unspecified_statevars}
 
     for free_statevar, default_value in free_statevars.items():
         arrays.update({free_statevar: (conds_as_strings, np.full(grid_shape, default_value))})
