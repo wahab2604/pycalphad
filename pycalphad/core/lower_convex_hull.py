@@ -167,7 +167,7 @@ def lower_convex_hull(global_grid, state_variables, result_array):
                 hyperplane(idx_global_grid_X_values, idx_global_grid_GM_values,
                            idx_comp_values, idx_result_array_MU_values, float(grid.N),
                            pot_conds_indices, comp_conds_indices,
-                           np.array([]), np.array([]),
+                           np.array([], dtype=np.uint64), np.array([]),
                            idx_result_array_NP_values, idx_result_array_points_values)
             # Copy phase values out
             points = idx_result_array_points_values
