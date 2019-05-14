@@ -634,7 +634,8 @@ cdef class Problem:
             chempot_grad = self.chemical_potential_gradient(x_in)
         # Fourth: Chemical potential constraints
         for idx in range(self.fixed_chempot_indices.shape[0]):
-            constraint_jac[constraint_offset, :] = CHEMPOT_CONSTRAINT_SCALING * chempot_grad[self.fixed_chempot_indices[idx], :]
+            for iter_idx in range(constraint_jac.shape[1]):
+                constraint_jac[constraint_offset, iter_idx] = CHEMPOT_CONSTRAINT_SCALING * chempot_grad[self.fixed_chempot_indices[idx], iter_idx]
             constraint_offset += 1
         # Fifth: Free-phase hyperplane wrt fixed-phase energy
         if len(self.fixed_phase_amounts) > 0:
