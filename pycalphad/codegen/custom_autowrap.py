@@ -476,7 +476,7 @@ class ThreadSafeCythonCodeWrapper(CythonCodeWrapper):
 
     @property
     def command(self):
-        command = [sys.executable, os.path.join(self.filepath, "setup.py"), "build_ext", "--build-lib", self.filepath]
+        command = [sys.executable, os.path.join(self.filepath, "setup.py"), "-q", "build_ext", "--build-lib", self.filepath]
         return command
 
     @property
