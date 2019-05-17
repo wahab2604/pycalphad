@@ -264,4 +264,4 @@ X = Composition
 MU = ChemicalPotential
 si_gas_constant = R = Float(8.3145) # ideal gas constant
 
-CONDITIONS_REQUIRING_HESSIANS = {ChemicalPotential, PhaseFraction}
+CONDITIONS_REQUIRING_HESSIANS = {ChemicalPotential, PhaseMoles}
