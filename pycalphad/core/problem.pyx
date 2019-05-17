@@ -90,7 +90,7 @@ cdef class Problem:
         self.xl[2] = 300 # XXX: Make this more reasonable
         self.xu = np.r_[np.ones(self.num_vars - self.num_phases)*2e19,
                         np.ones(self.num_phases)*2e19]
-        self.xu[2] = 2000 # XXX: Make this more reasonable
+        self.xu[2] = 6000 # XXX: Make this more reasonable
         self.x0 = np.zeros(self.num_vars)
         for var_idx in range(len(state_variables)):
             self.x0[var_idx] = comp_sets[0].dof[var_idx]

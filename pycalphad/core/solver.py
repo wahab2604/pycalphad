@@ -70,14 +70,13 @@ class InteriorPointSolver(SolverBase):
         # set default options
         self.ipopt_options = {
             'max_iter': 2000, # XXX: Large values of max_iter seem to be necessary for NP conditions
-            'print_level': 6,
+            'print_level': 0,
             # This option improves convergence when using L-BFGS
             'limited_memory_max_history': 100,
             'tol': 1e-1,
-            'constr_viol_tol': 1e-5,
+            'constr_viol_tol': 1e-4,
             'nlp_scaling_method': 'none',
             'hessian_approximation': 'limited-memory',
-            'derivative_test': 'first-order',
             'point_perturbation_radius': 0.0,
         }
         if not self.verbose:
