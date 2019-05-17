@@ -448,6 +448,7 @@ class ThreadSafeCythonCodeWrapper(CythonCodeWrapper):
         "        )")
 
     pyx_imports = (
+        "# cython: language_level=3\n"
         "import numpy as np\n"
         "cimport numpy as np\n"
         "from cpython cimport PyCapsule_New\n\n")
@@ -508,7 +509,12 @@ class ThreadSafeCythonCodeWrapper(CythonCodeWrapper):
         command = self.command
         command.extend(self.flags)
         try:
-            retoutput = check_output(command, stderr=STDOUT)
+            old_args = sys.argv[:]
+            sys.argv = command[1:]
+            if sys.platform == 'win32':
+                sys.argv.extend(['--compiler', 'mingw32'])
+            exec(open(command[1], 'r').read())
+            sys.argv[:] = old_args
         except CalledProcessError as e:
             raise CodeWrapError(
                 "Error while executing command: %s. Command output is:\n%s" % (
