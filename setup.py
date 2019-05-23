@@ -16,6 +16,10 @@ except ImportError:
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
+
+DEBUG_BUILD = False
+
+
 setup(
     name='pycalphad',
     version=versioneer.get_version(),
@@ -27,7 +31,14 @@ setup(
     ext_modules=cythonize(['pycalphad/core/hyperplane.pyx', 'pycalphad/core/eqsolver.pyx',
                            'pycalphad/core/phase_rec.pyx',
                            'pycalphad/core/composition_set.pyx',
-                           'pycalphad/core/problem.pyx']),
+                           'pycalphad/core/problem.pyx'],
+                          gdb_debug=DEBUG_BUILD,
+                          compiler_directives={
+                                                'language_level': 3,
+                                                'profile': DEBUG_BUILD,
+                                                'linetrace': DEBUG_BUILD,
+                                               }
+                          ),
     package_data={
         'pycalphad/core': ['*.pxd'],
     },
