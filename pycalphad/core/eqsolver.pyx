@@ -172,7 +172,9 @@ cdef _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem,
     prob = problem(composition_sets, comps, cur_conds)
     result = iter_solver.solve(prob)
     composition_sets = prob.composition_sets
-    if result.converged:
+    num_fixed_phases = sum(x.startswith('NP_') for x in cur_conds.keys())
+    # Fixed-phase conditions may require multiple infeasible intermediate solutions
+    if result.converged or (num_fixed_phases > 0):
         x = result.x
         compset = composition_sets[0]
         var_offset = len(compset.phase_record.state_variables)

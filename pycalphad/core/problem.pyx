@@ -65,10 +65,11 @@ cdef class Problem:
         self.nonvacant_elements = [x for x in self.pure_elements if x != 'VA']
         self.fixed_chempot_indices = np.array([self.nonvacant_elements.index(key[3:]) for key in conditions.keys() if key.startswith('MU_')], dtype=np.int32)
         self.fixed_chempot_values = np.array([float(value) for key, value in conditions.items() if key.startswith('MU_')])
+        self.num_phases = len(self.composition_sets)
         num_constraints = num_fixed_dof_cons + num_internal_cons + \
                           len(get_multiphase_constraint_rhs(conditions)) + len(self.fixed_chempot_indices) + \
-                          2 * len(fixed_phase_amounts)
-        self.num_phases = len(self.composition_sets)
+                          len(fixed_phase_amounts) * (self.num_phases - 1) + \
+                          len(fixed_phase_amounts)
         self.num_vars = sum(compset.phase_record.phase_dof for compset in comp_sets) + self.num_phases + len(state_variables)
         self.num_internal_constraints = num_internal_cons
         self.num_fixed_dof_constraints = num_fixed_dof_cons
@@ -480,7 +481,7 @@ cdef class Problem:
         cdef double[::1] moles = np.zeros(len(self.nonvacant_elements))
         cdef double[::1] tmp_energy = np.atleast_1d(0.)
         cdef double[::1] tmp_1d_view
-        cdef int phase_idx, var_offset, constraint_offset, var_idx, idx, spidx
+        cdef int phase_idx, free_phase_idx, fixed_phase_idx, var_offset, constraint_offset, var_idx, idx, spidx, other_spidx
         cdef double[::1] x = np.array(x_in)
         cdef double[::1] x_tmp = np.zeros(x.shape[0])
         cdef double[:, ::1] x_tmp_view = <double[:1, :x_tmp.shape[0]]>&x_tmp[0]
@@ -527,24 +528,27 @@ cdef class Problem:
         for idx in range(self.fixed_chempot_indices.shape[0]):
             l_constraints[constraint_offset] = CHEMPOT_CONSTRAINT_SCALING * chempots[self.fixed_chempot_indices[idx]]
             constraint_offset += 1
-        # Fifth: Free-phase hyperplane wrt fixed-phase energy
-        if len(self.fixed_phase_amounts) > 0:
-            chempots = self.chemical_potentials(x_in, free_only=True)
+        # Fifth: Other-phase hyperplanes wrt fixed-phase energy
         var_idx = num_statevars
-        for phase_idx in range(self.num_phases):
-            compset = self.composition_sets[phase_idx]
+        for fixed_phase_idx in range(self.num_phases):
+            compset = self.composition_sets[fixed_phase_idx]
             if compset.fixed:
                 x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                     x[var_idx:var_idx+compset.phase_record.phase_dof]
                 tmp_energy[0] = 0
                 moles[:] = 0
                 compset.phase_record.obj(tmp_energy, x_tmp_view)
-                l_constraints[constraint_offset] = CHEMPOT_CONSTRAINT_SCALING * tmp_energy[0]
                 for comp_idx in range(chempots.shape[0]):
                     tmp_1d_view = <double[:1]>&moles[comp_idx]
                     compset.phase_record.mass_obj(tmp_1d_view, x_tmp_view, comp_idx)
-                    l_constraints[constraint_offset] -= CHEMPOT_CONSTRAINT_SCALING * (chempots[comp_idx] * moles[comp_idx])
-                constraint_offset += 1
+                for other_phase_idx in range(self.num_phases):
+                    if fixed_phase_idx == other_phase_idx:
+                        continue
+                    other_chempots = self.chemical_potentials(x_in, selected_phase=other_phase_idx)
+                    l_constraints[constraint_offset] = CHEMPOT_CONSTRAINT_SCALING * tmp_energy[0]
+                    for comp_idx in range(other_chempots.shape[0]):
+                        l_constraints[constraint_offset] -= CHEMPOT_CONSTRAINT_SCALING * (other_chempots[comp_idx] * moles[comp_idx])
+                    constraint_offset += 1
             var_idx += compset.phase_record.phase_dof
         # Sixth: Fixed-phase hyperplane wrt total energy
         energy = self.objective(x_in)
@@ -574,8 +578,8 @@ cdef class Problem:
         cdef double[::1] moles_view
         cdef double[:, ::1] mass_grad_tmp = np.zeros((len(self.nonvacant_elements), self.num_vars))
         cdef double[::1] mass_grad_view
-        cdef int phase_idx, var_offset, constraint_offset, var_idx, iter_idx, grad_idx, \
-            hess_idx, comp_idx, idx, sum_idx, spidx, active_in_subl, phase_offset
+        cdef int phase_idx, fixed_phase_idx, other_phase_idx, var_offset, constraint_offset, var_idx, iter_idx, grad_idx, \
+            hess_idx, comp_idx, idx, sum_idx, spidx, other_spidx, active_in_subl, phase_offset
 
         x_tmp[:num_statevars] = x[:num_statevars]
 
@@ -637,13 +641,10 @@ cdef class Problem:
             for iter_idx in range(constraint_jac.shape[1]):
                 constraint_jac[constraint_offset, iter_idx] = CHEMPOT_CONSTRAINT_SCALING * chempot_grad[self.fixed_chempot_indices[idx], iter_idx]
             constraint_offset += 1
-        # Fifth: Free-phase hyperplane wrt fixed-phase energy
-        if len(self.fixed_phase_amounts) > 0:
-            chempot_grad = self.chemical_potential_gradient(x_in, free_only=True)
-            chempots = self.chemical_potentials(x_in, free_only=True)
+        # Fifth: Other-phase hyperplanes wrt fixed-phase energy
         var_idx = num_statevars
-        for phase_idx in range(self.num_phases):
-            compset = self.composition_sets[phase_idx]
+        for fixed_phase_idx in range(self.num_phases):
+            compset = self.composition_sets[fixed_phase_idx]
             if compset.fixed:
                 x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                     x[var_idx:var_idx+compset.phase_record.phase_dof]
@@ -651,25 +652,32 @@ cdef class Problem:
                 tmp_energy[0] = 0
                 compset.phase_record.obj(tmp_energy, x_tmp_view)
                 compset.phase_record.grad(grad_tmp, x_tmp)
-                for iter_idx in range(num_statevars):
-                    constraint_jac[constraint_offset, iter_idx] = CHEMPOT_CONSTRAINT_SCALING * grad_tmp[iter_idx]
-                for iter_idx in range(compset.phase_record.phase_dof):
-                    constraint_jac[constraint_offset, var_idx+iter_idx] = CHEMPOT_CONSTRAINT_SCALING * grad_tmp[num_statevars+iter_idx]
-                for comp_idx in range(chempot_grad.shape[0]):
-                    moles_view = <double[:1]>&moles[comp_idx]
-                    mass_grad_view = <double[:num_statevars+compset.phase_record.phase_dof]>&mass_grad_tmp[comp_idx, 0]
-                    compset.phase_record.mass_obj(moles_view, x_tmp_view, comp_idx)
-                    compset.phase_record.mass_grad(mass_grad_view, x_tmp, comp_idx)
+                for other_phase_idx in range(self.num_phases):
+                    if other_phase_idx == fixed_phase_idx:
+                        continue
                     for iter_idx in range(num_statevars):
-                        constraint_jac[constraint_offset, iter_idx] -= CHEMPOT_CONSTRAINT_SCALING * (chempots[comp_idx] * mass_grad_view[iter_idx])
+                        constraint_jac[constraint_offset, iter_idx] = CHEMPOT_CONSTRAINT_SCALING * grad_tmp[iter_idx]
                     for iter_idx in range(compset.phase_record.phase_dof):
-                        constraint_jac[constraint_offset, var_idx+iter_idx] -= CHEMPOT_CONSTRAINT_SCALING * (chempots[comp_idx] * mass_grad_view[num_statevars+iter_idx])
-                    for iter_idx in range(self.num_vars):
-                        constraint_jac[constraint_offset, iter_idx] -= CHEMPOT_CONSTRAINT_SCALING * (chempot_grad[comp_idx, iter_idx] * moles[comp_idx])
-
-                moles[:] = 0
-                mass_grad_tmp[:,:] = 0
-                constraint_offset += 1
+                        constraint_jac[constraint_offset, var_idx+iter_idx] = CHEMPOT_CONSTRAINT_SCALING * grad_tmp[num_statevars+iter_idx]
+                    other_chempot_grad = self.chemical_potential_gradient(x_in, selected_phase=other_phase_idx)
+                    other_chempots = self.chemical_potentials(x_in, selected_phase=other_phase_idx)
+                    other_spidx = self.num_vars - self.num_phases + other_phase_idx
+                    for comp_idx in range(other_chempot_grad.shape[0]):
+                        moles_view = <double[:1]>&moles[comp_idx]
+                        mass_grad_view = <double[:num_statevars+compset.phase_record.phase_dof]>&mass_grad_tmp[comp_idx, 0]
+                        # Could be factored out of other_phase_idx loop
+                        # Only relates to the mass of the fixed phase
+                        compset.phase_record.mass_obj(moles_view, x_tmp_view, comp_idx)
+                        compset.phase_record.mass_grad(mass_grad_view, x_tmp, comp_idx)
+                        for iter_idx in range(num_statevars):
+                            constraint_jac[constraint_offset, iter_idx] -= CHEMPOT_CONSTRAINT_SCALING * (other_chempots[comp_idx] * mass_grad_view[iter_idx])
+                        for iter_idx in range(compset.phase_record.phase_dof):
+                            constraint_jac[constraint_offset, var_idx+iter_idx] -= CHEMPOT_CONSTRAINT_SCALING * (other_chempots[comp_idx] * mass_grad_view[num_statevars+iter_idx])
+                        for iter_idx in range(self.num_vars):
+                            constraint_jac[constraint_offset, iter_idx] -= CHEMPOT_CONSTRAINT_SCALING * (other_chempot_grad[comp_idx, iter_idx] * moles[comp_idx])
+                    moles[:] = 0
+                    mass_grad_tmp[:,:] = 0
+                    constraint_offset += 1
             var_idx += compset.phase_record.phase_dof
         # Sixth: Fixed-phase hyperplane wrt total energy
         gradient = self.gradient(x_in)
