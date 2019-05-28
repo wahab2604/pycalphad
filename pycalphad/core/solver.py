@@ -75,7 +75,6 @@ class InteriorPointSolver(SolverBase):
             'limited_memory_max_history': 100,
             'tol': 1e-1,
             'constr_viol_tol': 1e-4,
-            'nlp_scaling_method': 'none',
             'hessian_approximation': 'limited-memory',
             'point_perturbation_radius': 0.0,
         }

@@ -187,7 +187,7 @@ cdef _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem,
     return result
 
 def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, state_variables, verbose,
-                            problem=Problem, solver=None):
+                            problem=Problem, solver=None, grid_func=None):
     """
     Compute equilibrium for the given conditions.
     This private function is meant to be called from a worker subprocess.
@@ -213,6 +213,8 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
     solver : pycalphad.core.solver.SolverBase
         Instance of a SolverBase subclass. If None is supplied, defaults to a
         pycalphad.core.solver.InteriorPointSolver
+    grid_func : callable
+        Kwarg-only function which passes kwargs (state variables) to calculate()
 
     Returns
     -------
@@ -322,19 +324,24 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
         remove_degenerate_phases(composition_sets, [], 0.5, 100, verbose)
         iterations = 0
         history = []
+        previous_statevars = np.array(state_variable_values)
         while (iterations < 10) and (not iter_solver.ignore_convergence):
             result = _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem, iter_solver)
 
             if result.converged:
                 chemical_potentials[:] = result.chemical_potentials
-            # Skip global minimization if some state variables are free
-            # Rigorously, we should compute a new grid for the current state variable values, but this is expensive...
-            if len(free_statevars) == 0:
-                changed_phases = add_new_phases(composition_sets, removed_compsets, phase_records,
-                                                current_grid, chemical_potentials,
-                                                1e-4, verbose)
-            else:
-                changed_phases = False
+            # If some state variables are free, compute a new grid for the current state variable values
+            if (len(free_statevars) > 0) and result.converged and \
+                    np.any(np.abs(result.x[:previous_statevars.shape[0]] - previous_statevars) > 10):
+                statevars = {str(sv): val for sv, val in zip(composition_sets[0].phase_record.state_variables, result.x)}
+                if verbose:
+                    print('Rebuilding grid', statevars)
+                current_grid = grid_func(**statevars)
+                current_grid = current_grid.isel(**dict(zip(statevars.keys(), [0] * len(statevars))))
+                previous_statevars = result.x[:previous_statevars.shape[0]]
+            changed_phases = add_new_phases(composition_sets, removed_compsets, phase_records,
+                                            current_grid, chemical_potentials,
+                                            1e-4, verbose)
             changed_phases |= remove_degenerate_phases(composition_sets, removed_compsets, 1e-3, 0, verbose)
             iterations += 1
             if not changed_phases:

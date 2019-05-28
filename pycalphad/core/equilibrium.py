@@ -266,6 +266,10 @@ def equilibrium(dbf, comps, phases, conditions, output=None, model=None,
                                           model=models, fake_points=True,
                                           callables=callables, output='GM',
                                           parameters=parameters, **grid_opts)
+    grid_func = lambda **kw: calculate(dbf, comps, active_phases,
+                                       model=models, fake_points=True,
+                                       callables=callables, output='GM',
+                                       parameters=parameters, **kw)
     coord_dict = str_conds.copy()
     coord_dict['vertex'] = np.arange(
         len(pure_elements) + 1)  # +1 is to accommodate the degenerate degree of freedom at the invariant reactions
@@ -291,13 +295,15 @@ def equilibrium(dbf, comps, phases, conditions, output=None, model=None,
             prop_slice = properties[OrderedDict(list(zip(str_conds.keys(),
                                                          [np.atleast_1d(sl)[ch] for ch, sl in zip(chunk, slices)])))]
             job = delayed(_solve_eq_at_conditions, pure=False)(comps, prop_slice, phase_records, grid,
-                                                               list(str_conds.keys()), state_variables, verbose, solver=solver)
+                                                               list(str_conds.keys()), state_variables, verbose,
+                                                               solver=solver, grid_func=grid_func)
             res.append(job)
         properties = delayed(_merge_property_slices, pure=False)(properties, chunk_grid, slices, list(str_conds.keys()), res)
     else:
         # Single-process job; don't create child processes
         properties = delayed(_solve_eq_at_conditions, pure=False)(comps, properties, phase_records, grid,
-                                                                  list(str_conds.keys()), state_variables, verbose, solver=solver)
+                                                                  list(str_conds.keys()), state_variables, verbose,
+                                                                  solver=solver, grid_func=grid_func)
 
     # Compute equilibrium values of any additional user-specified properties
     # We already computed these properties so don't recompute them
