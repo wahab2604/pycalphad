@@ -72,8 +72,8 @@ class InteriorPointSolver(SolverBase):
             'max_iter': 2000, # XXX: Large values of max_iter seem to be necessary for NP conditions
             'print_level': 0,
             # This option improves convergence when using L-BFGS
-            'limited_memory_max_history': 100,
-            'tol': 1e-1,
+            'limited_memory_max_history': 10,
+            'tol': 1e-2,
             'constr_viol_tol': 1e-4,
             'hessian_approximation': 'limited-memory',
             'point_perturbation_radius': 0.0,
@@ -143,6 +143,7 @@ class InteriorPointSolver(SolverBase):
             # Constraints are getting tiny; need to be strict about bounds
             if length_scale < 1e-6:
                 nlp.addOption(b'compl_inf_tol', 1e-3 * float(length_scale))
+                nlp.addOption(b'constr_viol_tol', 1e-3 * float(length_scale))
                 nlp.addOption(b'bound_relax_factor', MIN_SITE_FRACTION)
                 # This option ensures any bounds failures will fail "loudly"
                 # Otherwise we are liable to have subtle mass balance errors
