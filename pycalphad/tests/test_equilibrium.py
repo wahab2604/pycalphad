@@ -28,6 +28,7 @@ TOUGH_CHEMPOT_DBF = Database(ALNI_TOUGH_CHEMPOT_TDB)
 CUO_DBF = Database(CUO_TDB)
 PBSN_DBF = Database(PBSN_TDB)
 AL_PARAMETER_DBF = Database(AL_PARAMETER_TDB)
+ALZN_DBF = Database(ALZN_TDB)
 
 
 # ROSE DIAGRAM TEST
@@ -491,3 +492,12 @@ def test_eq_magnetic_chempot_cond():
                      {v.MU('FE'): -123110, v.T: 300, v.P: 1e5}, verbose=True)
     assert_allclose(np.squeeze(eq.GM.values), -35427.1, atol=0.1)
     assert_allclose(np.squeeze(eq.MU.values), [-8490.7, -123110], atol=0.1)
+
+
+def test_eq_np_conditions_metastable():
+    """
+    Fixed-phase condition for a binary system, with a metastable phase.
+    """
+    eq = equilibrium(ALZN_DBF, ['AL', 'ZN', 'VA'], ['FCC_A1', 'LIQUID', 'HCP_A3'],
+                     {v.X('ZN'): 1e-3, v.NP('LIQUID'): 1e-3, v.P: 1e5}, verbose=True)
+    assert_allclose(np.squeeze(eq.T.values), 932.7, atol=1.0)

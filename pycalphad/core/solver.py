@@ -72,7 +72,8 @@ class InteriorPointSolver(SolverBase):
             'max_iter': 2000, # XXX: Large values of max_iter seem to be necessary for NP conditions
             'print_level': 0,
             # This option improves convergence when using L-BFGS
-            'limited_memory_max_history': 10,
+            'limited_memory_max_history': 100,
+            'limited_memory_initialization': 'scalar4',
             'tol': 1e-2,
             'constr_viol_tol': 1e-4,
             'hessian_approximation': 'limited-memory',
