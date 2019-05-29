@@ -1,3 +1,4 @@
+cimport numpy as np
 cdef class Problem:
     cdef public int num_constraints
     cdef public int num_fixed_dof_constraints
@@ -17,3 +18,11 @@ cdef class Problem:
     cdef public double[::1] x0
     cdef public double[::1] cl
     cdef public double[::1] cu
+    cpdef np.ndarray[dtype=np.float64_t, ndim=1] chemical_potentials(self, np.ndarray[dtype=np.float64_t, ndim=1] x_in, selected_phase=*)
+    cpdef np.ndarray[dtype=np.float64_t, ndim=2] chemical_potential_gradient(self, np.ndarray[dtype=np.float64_t, ndim=1] x_in, selected_phase=*)
+    cpdef np.ndarray[dtype=np.float64_t, ndim=1] constraints(self, np.ndarray[dtype=np.float64_t, ndim=1] x_in)
+    cpdef np.ndarray[dtype=np.float64_t, ndim=2] jacobian(self, np.ndarray[dtype=np.float64_t, ndim=1] x_in)
+    cpdef np.ndarray[dtype=np.float64_t, ndim=2] mass_gradient(self, np.ndarray[dtype=np.float64_t, ndim=1] x_in, selected_phase=*)
+    cpdef np.ndarray[dtype=np.float64_t, ndim=2] mass_jacobian(self, np.ndarray[dtype=np.float64_t, ndim=1] x_in, selected_phase=*)
+    cpdef np.ndarray[dtype=np.float64_t, ndim=1] gradient(self, np.ndarray[dtype=np.float64_t, ndim=1] x_in)
+    cpdef np.ndarray[dtype=np.float64_t, ndim=2] hessian(self, np.ndarray[dtype=np.float64_t, ndim=1] x_in)
