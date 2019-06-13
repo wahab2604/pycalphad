@@ -158,9 +158,9 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void hess(self, double[:, ::1] out, double[::1] dof) nogil:
+    cpdef void hess(self, double[::1] out, double[::1] dof) nogil:
         cdef double* dof_concat = alloc_dof_with_parameters(dof, self.parameters)
-        self._hess.call(&out[0,0], &dof_concat[0])
+        self._hess.call(&out[0], &dof_concat[0])
         if self.parameters.shape[0] > 0:
             free(dof_concat)
 

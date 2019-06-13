@@ -36,6 +36,14 @@ def _pinv_derivative(a, a_pinv, a_prime):
                                                               a_prime.T[dof_idx]), a_pinv.T), a_pinv)
     return result
 
+cdef void _from_tril_to_square(double[::1] flattened_tril, double[:, ::1] out) nogil:
+    cdef size_t row, col, k
+    k = 0
+    for row in range(out.shape[0]):
+        for col in range(0, row+1):
+            out[row, col] = flattened_tril[k]
+            out[col, row] = flattened_tril[k]
+            k = k + 1
 
 cdef class Problem:
     def __init__(self, comp_sets, comps, conditions):
@@ -178,15 +186,18 @@ cdef class Problem:
         cdef size_t num_statevars = len(compset.phase_record.state_variables)
         cdef double[:, ::1] hess = np.zeros((self.num_vars, self.num_vars))
         cdef double[::1] hess_tmp = np.zeros((self.num_vars * self.num_vars))
+        cdef double[::1] hess_tmp_flat = np.zeros((self.num_vars * self.num_vars))
         cdef double[::1] grad_tmp = np.zeros(self.num_vars)
+        cdef double[::1] hess_tmp_flat_view
         cdef double[:, ::1] hess_tmp_view
         cdef double[::1] x = np.array(x_in)
         cdef double[::1] x_tmp = np.zeros(x.shape[0])
         cdef double phase_frac = 0
         cdef size_t var_idx = 0
         cdef size_t phase_idx, grad_idx, cons_idx, dof_idx, sv_idx
-        cdef size_t row, col
+        cdef size_t row, col, k
         cdef size_t constraint_offset = 0
+        cdef size_t nele_hess
         x_tmp[:num_statevars] = x[:num_statevars]
         var_idx = num_statevars
         for phase_idx in range(self.num_phases):
@@ -194,10 +205,17 @@ cdef class Problem:
             phase_frac = x[self.num_vars - self.num_phases + phase_idx]
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                 x[var_idx:var_idx+compset.phase_record.phase_dof]
+            compset.phase_record.grad(grad_tmp, x_tmp)
+            # Lower triangular elements including diagonal
+            nele_hess = (num_statevars + compset.phase_record.phase_dof) * (num_statevars + compset.phase_record.phase_dof + 1)/2
+            hess_tmp_flat_view = <double[:nele_hess]>&hess_tmp_flat[0]
+            compset.phase_record.hess(hess_tmp_flat_view, x_tmp)
+            # Convert to square matrix
             hess_tmp_view = <double[:num_statevars+compset.phase_record.phase_dof,
                                     :num_statevars+compset.phase_record.phase_dof]>&hess_tmp[0]
-            compset.phase_record.grad(grad_tmp, x_tmp)
-            compset.phase_record.hess(hess_tmp_view, x_tmp)
+
+            _from_tril_to_square(hess_tmp_flat_view, hess_tmp_view)
+
             for row in range(compset.phase_record.phase_dof):
                 for col in range(compset.phase_record.phase_dof):
                     hess[var_idx+row, var_idx+col] = \
@@ -224,6 +242,7 @@ cdef class Problem:
                 hess[self.num_vars - self.num_phases + phase_idx, sv_idx] = grad_tmp[sv_idx]
                 hess[sv_idx, self.num_vars - self.num_phases + phase_idx] = grad_tmp[sv_idx]
             hess_tmp[:] = 0
+            hess_tmp_flat[:] = 0
             grad_tmp[:] = 0
             x_tmp[num_statevars:] = 0
             var_idx += compset.phase_record.phase_dof

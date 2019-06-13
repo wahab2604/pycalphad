@@ -31,6 +31,10 @@ def build_functions(sympy_graph, variables, parameters=None, wrt=None, include_o
         if include_grad:
             grad = lambdify(inp, grad_graphs, backend='llvm', cse=cse)
         if include_hess:
-            hess_graphs = list(list(g.diff(w) for w in wrt) for g in grad_graphs)
+            hess_graphs = []
+            # Flattened 1-D lower triangular
+            for row_idx in range(len(grad_graphs)):
+                for col_idx in range(0, row_idx+1):
+                    hess_graphs.append(grad_graphs[col_idx].diff(wrt[row_idx]))
             hess = lambdify(inp, hess_graphs, backend='llvm', cse=cse)
     return BuildFunctionsResult(func=func, grad=grad, hess=hess)
