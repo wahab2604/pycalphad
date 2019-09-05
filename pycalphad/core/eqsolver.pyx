@@ -250,6 +250,11 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
     prop_X_values = properties.X
     prop_Y_values = properties.Y
     prop_GM_values = properties.GM
+    # XXX: A hack to illustrate the idea
+    from pycalphad.core.light_dataset import LightDataset
+
+    if isinstance(properties, LightDataset):
+        properties.comp_sets = np.zeros_like(prop_GM_values, dtype='object')
     str_state_variables = [str(k) for k in state_variables if str(k) in grid.coords.keys()]
     it = np.nditer(prop_GM_values, flags=['multi_index'])
 
@@ -320,6 +325,10 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
         if converged:
             if verbose:
                 print('Composition Sets', composition_sets)
+            if isinstance(properties, LightDataset):
+                properties.comp_sets[it.multi_index] = composition_sets
+                it.iternext()
+                continue
             prop_MU_values[it.multi_index] = chemical_potentials
             prop_Phase_values[it.multi_index] = ''
             prop_NP_values[it.multi_index + np.index_exp[:len(composition_sets)]] = [compset.NP for compset in composition_sets]
