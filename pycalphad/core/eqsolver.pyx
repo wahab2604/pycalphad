@@ -12,6 +12,7 @@ from pycalphad.core.composition_set cimport CompositionSet
 from pycalphad.core.phase_rec cimport PhaseRecord
 from pycalphad.core.constants import *
 import pycalphad.variables as v
+import copy
 
 
 cdef bint remove_degenerate_phases(object composition_sets, object removed_compsets,
@@ -304,7 +305,25 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
             result = _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem, iter_solver)
 
             if result.converged:
+                previous_compsets = [(compset.phase_record.phase_name,np.array(compset.dof),compset.NP) for compset in composition_sets]
+                previous_result = copy.deepcopy(result)
                 chemical_potentials[:] = result.chemical_potentials
+            elif iterations > 0:
+                if verbose:
+                    print('Restoring previous set of phases')
+                result = previous_result
+                chemical_potentials[:] = result.chemical_potentials
+                composition_sets = []
+                for phase_name, dof, phase_amt in previous_compsets:
+                    phase_record = phase_records[phase_name]
+                    sfx = dof[len(state_variables):]
+                    state_variable_values = dof[:len(state_variables)]
+                    compset = CompositionSet(phase_record)
+                    compset.update(sfx, phase_amt, state_variable_values, False)
+                    composition_sets.append(compset)
+                changed_phases = False
+                break
+
             if not global_min:
                 break
             changed_phases = add_new_phases(composition_sets, removed_compsets, phase_records,
