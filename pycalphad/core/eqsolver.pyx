@@ -177,7 +177,7 @@ cdef _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem,
         phase_idx = 0
         for compset in composition_sets:
             compset.update(x[var_offset:var_offset + compset.phase_record.phase_dof],
-                           x[prob.num_vars - prob.num_phases + phase_idx], x[:len(compset.phase_record.state_variables)], True)
+                           x[prob.num_vars - len(prob.nonvacant_elements) - prob.num_phases + phase_idx], x[:len(compset.phase_record.state_variables)], True)
             var_offset += compset.phase_record.phase_dof
             phase_idx += 1
     return result
