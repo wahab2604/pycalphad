@@ -2,7 +2,7 @@
 from pycalphad.core.composition_set cimport CompositionSet
 cimport numpy as np
 import numpy as np
-from pycalphad.core.constants import MIN_SITE_FRACTION, MIN_PHASE_FRACTION, CHEMPOT_CONSTRAINT_SCALING, DRIVING_FORCE_CONSTRAINT_SCALING
+from pycalphad.core.constants import MIN_SITE_FRACTION, MIN_PHASE_FRACTION, CHEMPOT_CONSTRAINT_SCALING
 from pycalphad.core.constraints import get_multiphase_constraint_rhs
 import pycalphad.variables as v
 
@@ -214,7 +214,6 @@ cdef class Problem:
         cdef double[::1] moles_hessian_tmp = np.zeros((self.num_vars * self.num_vars))
         cdef double[:, ::1] moles_hessian_view
         cdef double[::1] x = np.array(x_in)
-        cdef double[::1] x_tmp = np.zeros(x.shape[0])
         cdef double phase_amt
         cdef size_t var_idx = 0
         cdef size_t phase_idx, grad_idx, cons_idx, dof_idx, sv_idx, spidx
@@ -223,7 +222,6 @@ cdef class Problem:
         cdef size_t constraint_offset = 0
 
         chempots[:] = x[-len(self.nonvacant_elements):]
-        x_tmp[:num_statevars] = x[:num_statevars]
         var_idx = num_statevars
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
@@ -242,7 +240,7 @@ cdef class Problem:
                 compset.phase_record.mass_grad(moles_gradient_view, x, comp_idx)
                 compset.phase_record.mass_hess(moles_hessian_view, x, comp_idx)
                 for dof_idx in range(compset.phase_record.phase_dof):
-                    for grad_idx in range(compset.phase_record.phase_dof):
+                    for grad_idx in range(dof_idx, compset.phase_record.phase_dof):
                         moles_hessian[comp_idx,num_statevars+dof_idx,
                                       num_statevars+grad_idx] = moles_hessian_view[num_statevars+dof_idx, num_statevars+grad_idx]
                         moles_hessian[comp_idx,num_statevars+grad_idx,
@@ -273,11 +271,11 @@ cdef class Problem:
                     hess[sv_idx, chempot_idx+comp_idx] += phase_amt * moles_gradient[comp_idx, sv_idx]
             # wrt phase_dof, phase_dof
             for dof_idx in range(compset.phase_record.phase_dof):
-                for grad_idx in range(compset.phase_record.phase_dof):
+                for grad_idx in range(dof_idx, compset.phase_record.phase_dof):
                     for comp_idx in range(chempots.shape[0]):
                         if dof_idx != grad_idx:
                             hess[var_idx+dof_idx, var_idx+grad_idx] += phase_amt * chempots[comp_idx] * moles_hessian[comp_idx, num_statevars+dof_idx, num_statevars+grad_idx]
-                        hess[var_idx+dof_idx, var_idx+grad_idx] += phase_amt * chempots[comp_idx] * moles_hessian[comp_idx, num_statevars+grad_idx, num_statevars+dof_idx]
+                        hess[var_idx+grad_idx, var_idx+dof_idx] += phase_amt * chempots[comp_idx] * moles_hessian[comp_idx, num_statevars+grad_idx, num_statevars+dof_idx]
             # wrt phase_dof, phase amount
             for dof_idx in range(compset.phase_record.phase_dof):
                 for comp_idx in range(chempots.shape[0]):
@@ -295,8 +293,9 @@ cdef class Problem:
                 hess[chempot_idx+comp_idx, spidx] = moles[comp_idx]
             # wrt chemical potentials, chemical potentials (=zero)
             moles[:] = 0
-            moles_gradient[:] = 0
+            moles_gradient[:,:] = 0
             moles_hessian_tmp[:] = 0
+            moles_hessian[:,:,:] = 0
             var_idx += compset.phase_record.phase_dof
         return np.array(hess)
 
@@ -431,21 +430,28 @@ cdef class Problem:
             # wrt statevars, statevars
             for sv_idx in range(num_statevars):
                 for dof_idx in range(sv_idx, num_statevars):
+                    if sv_idx != dof_idx:
+                        hess[dof_idx, sv_idx] += lmul[constraint_offset] * phase_amt * hess_tmp_view[dof_idx, sv_idx]
+                    hess[sv_idx, dof_idx] += lmul[constraint_offset] * phase_amt * hess_tmp_view[sv_idx, dof_idx]
                     for comp_idx in range(chempots.shape[0]):
                         if sv_idx != dof_idx:
-                            hess[dof_idx, sv_idx] += lmul[constraint_offset] * phase_amt * (hess_tmp_view[dof_idx, sv_idx] - chempots[comp_idx] * moles_hessian[comp_idx, dof_idx, sv_idx])
-                        hess[sv_idx, dof_idx] += lmul[constraint_offset] * phase_amt * (hess_tmp_view[sv_idx, dof_idx] - chempots[comp_idx] * moles_hessian[comp_idx, sv_idx, dof_idx])
+                            hess[dof_idx, sv_idx] += -lmul[constraint_offset] * phase_amt * chempots[comp_idx] * moles_hessian[comp_idx, dof_idx, sv_idx]
+                        hess[sv_idx, dof_idx] += -lmul[constraint_offset] * phase_amt * chempots[comp_idx] * moles_hessian[comp_idx, sv_idx, dof_idx]
             # wrt statevars, phase_dof
             for sv_idx in range(num_statevars):
                 for dof_idx in range(compset.phase_record.phase_dof):
+                    hess[var_idx+dof_idx, sv_idx] += lmul[constraint_offset] * phase_amt * hess_tmp_view[num_statevars+dof_idx, sv_idx]
+                    hess[sv_idx, var_idx+dof_idx] += lmul[constraint_offset] * phase_amt * hess_tmp_view[sv_idx, num_statevars+dof_idx]
                     for comp_idx in range(chempots.shape[0]):
-                        hess[var_idx+dof_idx, sv_idx] += lmul[constraint_offset] * phase_amt * (hess_tmp_view[num_statevars+dof_idx, sv_idx] - chempots[comp_idx] * moles_hessian[comp_idx, num_statevars+dof_idx, sv_idx])
-                        hess[sv_idx, var_idx+dof_idx] += lmul[constraint_offset] * phase_amt * (hess_tmp_view[sv_idx, num_statevars+dof_idx] - chempots[comp_idx] * moles_hessian[comp_idx, sv_idx, num_statevars+dof_idx])
+                        hess[var_idx+dof_idx, sv_idx] += -lmul[constraint_offset] * phase_amt * chempots[comp_idx] * moles_hessian[comp_idx, num_statevars+dof_idx, sv_idx]
+                        hess[sv_idx, var_idx+dof_idx] += -lmul[constraint_offset] * phase_amt * chempots[comp_idx] * moles_hessian[comp_idx, sv_idx, num_statevars+dof_idx]
             # wrt statevars, phase amount
             for sv_idx in range(num_statevars):
+                hess[spidx, sv_idx] += lmul[constraint_offset] * energy_gradient[sv_idx]
+                hess[sv_idx, spidx] += lmul[constraint_offset] * energy_gradient[sv_idx]
                 for comp_idx in range(chempots.shape[0]):
-                    hess[spidx, sv_idx] += lmul[constraint_offset] * (energy_gradient[sv_idx] - chempots[comp_idx] * moles_gradient[comp_idx, sv_idx])
-                    hess[sv_idx, spidx] += lmul[constraint_offset] * (energy_gradient[sv_idx] - chempots[comp_idx] * moles_gradient[comp_idx, sv_idx])
+                    hess[spidx, sv_idx] += -lmul[constraint_offset] * chempots[comp_idx] * moles_gradient[comp_idx, sv_idx]
+                    hess[sv_idx, spidx] += -lmul[constraint_offset] * chempots[comp_idx] * moles_gradient[comp_idx, sv_idx]
             # wrt statevars, chemical potentials
             for sv_idx in range(num_statevars):
                 for comp_idx in range(chempots.shape[0]):
@@ -453,37 +459,46 @@ cdef class Problem:
                     hess[sv_idx, chempot_idx+comp_idx] -= lmul[constraint_offset] * phase_amt * moles_gradient[comp_idx, sv_idx]
             # wrt phase_dof, phase_dof
             for dof_idx in range(compset.phase_record.phase_dof):
-                for grad_idx in range(compset.phase_record.phase_dof):
+                for grad_idx in range(dof_idx, compset.phase_record.phase_dof):
+                    if dof_idx != grad_idx:
+                        hess[var_idx+dof_idx, var_idx+grad_idx] += lmul[constraint_offset] * phase_amt * hess_tmp_view[num_statevars+dof_idx, num_statevars+grad_idx]
+                    hess[var_idx+grad_idx, var_idx+dof_idx] += lmul[constraint_offset] * phase_amt * hess_tmp_view[num_statevars+grad_idx, num_statevars+dof_idx]
                     for comp_idx in range(chempots.shape[0]):
                         if dof_idx != grad_idx:
-                            hess[var_idx+dof_idx, var_idx+grad_idx] += lmul[constraint_offset] * phase_amt * (hess_tmp_view[num_statevars+dof_idx, num_statevars+grad_idx] - chempots[comp_idx] * moles_hessian[comp_idx, num_statevars+dof_idx, num_statevars+grad_idx])
-                        hess[var_idx+dof_idx, var_idx+grad_idx] += lmul[constraint_offset] * phase_amt * (hess_tmp_view[num_statevars+grad_idx, num_statevars+dof_idx] - chempots[comp_idx] * moles_hessian[comp_idx, num_statevars+grad_idx, num_statevars+dof_idx])
+                            hess[var_idx+dof_idx, var_idx+grad_idx] += -lmul[constraint_offset] * phase_amt * chempots[comp_idx] * moles_hessian[comp_idx, num_statevars+dof_idx, num_statevars+grad_idx]
+                        hess[var_idx+grad_idx, var_idx+dof_idx] += -lmul[constraint_offset] * phase_amt * chempots[comp_idx] * moles_hessian[comp_idx, num_statevars+grad_idx, num_statevars+dof_idx]
             # wrt phase_dof, phase amount
             for dof_idx in range(compset.phase_record.phase_dof):
+                hess[var_idx+dof_idx, spidx] += lmul[constraint_offset] * energy_gradient[num_statevars+dof_idx]
+                hess[spidx, var_idx+dof_idx] += lmul[constraint_offset] * energy_gradient[num_statevars+dof_idx]
                 for comp_idx in range(chempots.shape[0]):
-                    hess[var_idx+dof_idx, spidx] += lmul[constraint_offset] * (energy_gradient[num_statevars+dof_idx] - chempots[comp_idx] * moles_gradient[comp_idx, num_statevars+dof_idx])
-                    hess[spidx, var_idx+dof_idx] += lmul[constraint_offset] * (energy_gradient[num_statevars+dof_idx] - chempots[comp_idx] * moles_gradient[comp_idx, num_statevars+dof_idx])
+                    hess[var_idx+dof_idx, spidx] += -lmul[constraint_offset] * chempots[comp_idx] * moles_gradient[comp_idx, num_statevars+dof_idx]
+                    hess[spidx, var_idx+dof_idx] += -lmul[constraint_offset] * chempots[comp_idx] * moles_gradient[comp_idx, num_statevars+dof_idx]
             # wrt phase_dof, chemical potentials
             for dof_idx in range(compset.phase_record.phase_dof):
                 for comp_idx in range(chempots.shape[0]):
-                    hess[var_idx+dof_idx, chempot_idx+comp_idx] = -lmul[constraint_offset] * phase_amt * moles_gradient[comp_idx, num_statevars+dof_idx]
-                    hess[chempot_idx+comp_idx, var_idx+dof_idx] = -lmul[constraint_offset] * phase_amt * moles_gradient[comp_idx, num_statevars+dof_idx]
+                    hess[var_idx+dof_idx, chempot_idx+comp_idx] += -lmul[constraint_offset] * phase_amt * moles_gradient[comp_idx, num_statevars+dof_idx]
+                    hess[chempot_idx+comp_idx, var_idx+dof_idx] += -lmul[constraint_offset] * phase_amt * moles_gradient[comp_idx, num_statevars+dof_idx]
             # wrt phase amount, phase amount (=zero)
             # wrt phase amount, chemical potentials
             for comp_idx in range(chempots.shape[0]):
-                hess[spidx, chempot_idx+comp_idx] = -lmul[constraint_offset] * moles[comp_idx]
-                hess[chempot_idx+comp_idx, spidx] = -lmul[constraint_offset] * moles[comp_idx]
+                hess[spidx, chempot_idx+comp_idx] += -lmul[constraint_offset] * moles[comp_idx]
+                hess[chempot_idx+comp_idx, spidx] += -lmul[constraint_offset] * moles[comp_idx]
             # wrt chemical potentials, chemical potentials (=zero)
             hess_tmp[:] = 0
             energy_out[0] = 0
             energy_gradient[:] = 0
             moles[:] = 0
-            moles_gradient[:] = 0
+            moles_gradient[:,:] = 0
             moles_hessian_tmp[:] = 0
+            moles_hessian[:,:,:] = 0
             var_idx += compset.phase_record.phase_dof
             constraint_offset += 1
         result = np.array(hess)[np.tril_indices(hess.shape[0])]
         return result
+
+    def hessianstructure(self):
+        return np.tril_indices(self.num_vars)
 
     def mass_gradient(self, x_in, selected_phase_idx=None):
         cdef CompositionSet compset = self.composition_sets[0]
