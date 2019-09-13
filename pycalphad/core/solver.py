@@ -132,11 +132,6 @@ class InteriorPointSolver(SolverBase):
             cu=prob.cu
         )
         self.apply_options(nlp)
-        # XXX: Hack until exact chemical potential Hessians are implemented
-        if True:
-            nlp.addOption(b'hessian_approximation', b'limited-memory')
-            if self.verbose:
-                print('Turning off exact Hessians temporarily')
         # Note: Using the ipopt derivative checker can be tricky at the edges of composition space
         # It will not give valid results for the finite difference approximation
         x, info = nlp.solve(prob.x0)
