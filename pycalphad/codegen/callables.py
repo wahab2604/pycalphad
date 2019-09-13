@@ -9,7 +9,7 @@ import warnings
 
 
 def build_callables(dbf, comps, phases, models, parameter_symbols=None,
-                    output='GM', build_gradients=True, build_hessians=False,
+                    output='GM', build_gradients=True, build_hessians=True,
                     additional_statevars=None):
     """
     Create a compiled callables dictionary.
