@@ -148,7 +148,7 @@ class InteriorPointSolver(SolverBase):
             accurate_x, accurate_info = nlp.solve(x)
             if accurate_info['status'] >= 0:
                 x, info = accurate_x, accurate_info
-        chemical_potentials = x[-len(prob.nonvacant_elements):]
+        chemical_potentials = prob.chemical_potentials(x)
         if info['status'] == -10:
             # Not enough degrees of freedom; nothing to do
             if len(prob.composition_sets) == 1:

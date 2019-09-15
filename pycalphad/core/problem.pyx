@@ -87,10 +87,12 @@ cdef class Problem:
             self.fixed_dof_indices[value_idx] = self.num_vars - num_chemical_potentials + self.fixed_chempot_indices[value_idx - len(fixed_statevars)]
             self.fixed_dof_values[value_idx] = self.fixed_chempot_values[value_idx - len(fixed_statevars)]
         self.num_constraints = num_constraints
+        # XXX: Are these large enough bounds for the chemical potential?
+        # They need to be bounded somehow, or else they will run off to +- inf
         self.xl = np.r_[np.full(self.num_vars - self.num_phases - num_chemical_potentials, MIN_SITE_FRACTION),
-                        np.full(self.num_phases, MIN_PHASE_FRACTION), np.full(num_chemical_potentials, -2.e19)]
+                        np.full(self.num_phases, MIN_PHASE_FRACTION), np.full(num_chemical_potentials, -2e15)]
         self.xu = np.r_[np.ones(self.num_vars - self.num_phases - num_chemical_potentials)*2.e19,
-                        np.ones(self.num_phases)*2e19, np.full(num_chemical_potentials, 2.e19)]
+                        np.ones(self.num_phases)*2e19, np.full(num_chemical_potentials, 2e15)]
         self.x0 = np.zeros(self.num_vars)
         for var_idx in range(len(state_variables)):
             self.x0[var_idx] = comp_sets[0].dof[var_idx]
@@ -195,6 +197,46 @@ cdef class Problem:
             var_offset += compset.phase_record.phase_dof
 
         #print('gradient_term', np.array(gradient_term))
+        gradient_term[np.isnan(gradient_term)] = 0
+        return gradient_term
+
+    def energy_gradient(self, x_in):
+        cdef CompositionSet compset = self.composition_sets[0]
+        cdef int phase_idx
+        cdef int num_statevars = len(compset.phase_record.state_variables)
+        cdef int var_offset = num_statevars
+        cdef int dof_x_idx, spidx
+        cdef int idx = 0
+        cdef double total_obj = 0
+        cdef double[::1] x = np.array(x_in)
+        cdef double tmp = 0
+        cdef double mass_obj_tmp = 0
+        cdef double[:,::1] dof_2d_view = <double[:1,:x.shape[0]]>&x[0]
+        cdef double[::1] energy_2d_view = <double[:1]>&tmp
+        cdef double[::1] grad_tmp = np.zeros(x.shape[0])
+        cdef double[::1] out_mass_tmp = np.zeros(self.num_vars)
+        cdef np.ndarray[ndim=1, dtype=np.float64_t] gradient_term = np.zeros(self.num_vars)
+
+        for phase_idx in range(self.num_phases):
+            compset = self.composition_sets[phase_idx]
+            x = np.r_[x_in[:num_statevars], x_in[var_offset:var_offset+compset.phase_record.phase_dof]]
+            spidx = self.num_vars - len(self.nonvacant_elements) - self.num_phases + phase_idx
+            dof_2d_view = <double[:1,:x.shape[0]]>&x[0]
+            compset.phase_record.obj(energy_2d_view, dof_2d_view)
+            compset.phase_record.grad(grad_tmp, x)
+            for dof_x_idx in range(num_statevars):
+                gradient_term[dof_x_idx] += x_in[spidx] * grad_tmp[dof_x_idx]
+            for dof_x_idx in range(compset.phase_record.phase_dof):
+                gradient_term[var_offset + dof_x_idx] = \
+                    x_in[spidx] * grad_tmp[num_statevars+dof_x_idx]
+            idx = 0
+            gradient_term[spidx] += tmp
+            grad_tmp[:] = 0
+            tmp = 0
+            energy_2d_view = <double[:1]>&tmp
+            var_offset += compset.phase_record.phase_dof
+            phase_idx += 1
+
         gradient_term[np.isnan(gradient_term)] = 0
         return gradient_term
 
@@ -516,7 +558,7 @@ cdef class Problem:
                 var_idx += compset.phase_record.phase_dof
                 continue
             compset = self.composition_sets[phase_idx]
-            spidx = self.num_vars - self.num_phases + phase_idx
+            spidx = self.num_vars - len(self.nonvacant_elements) - self.num_phases + phase_idx
             if selected_phase_idx is None:
                 phase_amt = x[spidx]
             else:
@@ -540,7 +582,8 @@ cdef class Problem:
         """For chemical potential calculation."""
         cdef CompositionSet compset = self.composition_sets[0]
         cdef int num_statevars = len(compset.phase_record.state_variables)
-        cdef np.ndarray active_ineq = np.flatnonzero((np.array(x_in) <= 1.1*MIN_SITE_FRACTION))
+        # Exclude chemical potentials from equality check
+        cdef np.ndarray active_ineq = np.flatnonzero((np.array(x_in[-len(self.nonvacant_elements):]) <= 1.1*MIN_SITE_FRACTION))
         cdef size_t num_active_ineq = len(active_ineq)
         cdef double[:, ::1] mass_jac = np.zeros((self.num_internal_constraints + num_active_ineq + len(self.nonvacant_elements), self.num_vars))
         cdef double[:, ::1] mass_jac_tmp = np.zeros((self.num_internal_constraints + len(self.nonvacant_elements), self.num_vars))
@@ -580,11 +623,11 @@ cdef class Problem:
                 mass_jac[grad_idx, var_idx] = mass_grad[grad_idx - constraint_offset, var_idx]
         return np.array(mass_jac)
 
-    def chemical_potentials(self, x_in, selected_phase_idx=None):
+    def chemical_potentials(self, x_in):
         "Assuming the input is a feasible solution."
         # mu = (A+) grad
-        jac_pinv = np.linalg.pinv(self.mass_jacobian(x_in, selected_phase_idx=selected_phase_idx).T)
-        mu = np.dot(jac_pinv, self.gradient(x_in, selected_phase_idx=selected_phase_idx))[-len(self.nonvacant_elements):]
+        jac_pinv = np.linalg.pinv(self.mass_jacobian(x_in).T)
+        mu = np.dot(jac_pinv, self.energy_gradient(x_in))[-len(self.nonvacant_elements):]
         return mu
 
     def chemical_potential_gradient(self, x_in, selected_phase_idx=None):
