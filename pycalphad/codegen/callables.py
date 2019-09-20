@@ -189,7 +189,10 @@ def build_phase_records(dbf, comps, phases, conds, models, output='GM',
         'internal_cons_hess': {},
         'mp_cons': {},
         'mp_jac': {},
-        'mp_cons_hess': {}
+        'mp_cons_hess': {},
+        'dpot_cons': {},
+        'dpot_jac': {},
+        'dpot_cons_hess': {}
     }
     phase_records = {}
     state_variables = sorted(get_state_variables(models=models, conds=conds), key=str)
@@ -213,8 +216,12 @@ def build_phase_records(dbf, comps, phases, conds, models, output='GM',
         _constraints['mp_cons'][name] = cfuncs.multiphase_cons
         _constraints['mp_jac'][name] = cfuncs.multiphase_jac
         _constraints['mp_cons_hess'][name] = cfuncs.multiphase_cons_hess
+        _constraints['dpot_cons'][name] = cfuncs.dpot_cons
+        _constraints['dpot_jac'][name] = cfuncs.dpot_jac
+        _constraints['dpot_cons_hess'][name] = cfuncs.dpot_cons_hess
         num_internal_cons = cfuncs.num_internal_cons
         num_multiphase_cons = cfuncs.num_multiphase_cons
+        num_dpot_cons = cfuncs.num_dpot_cons
 
         phase_records[name.upper()] = PhaseRecord(comps, state_variables, site_fracs, param_values,
                                                   callables[output]['callables'][name],
@@ -229,8 +236,12 @@ def build_phase_records(dbf, comps, phases, conds, models, output='GM',
                                                   _constraints['mp_cons'][name],
                                                   _constraints['mp_jac'][name],
                                                   _constraints['mp_cons_hess'][name],
+                                                  _constraints['dpot_cons'][name],
+                                                  _constraints['dpot_jac'][name],
+                                                  _constraints['dpot_cons_hess'][name],
                                                   num_internal_cons,
-                                                  num_multiphase_cons)
+                                                  num_multiphase_cons,
+                                                  num_dpot_cons)
 
         if verbose:
             print(name + ' ')
