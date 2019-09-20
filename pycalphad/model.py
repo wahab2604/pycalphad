@@ -386,7 +386,7 @@ class Model(object):
                 active = set(sublattice).intersection(self.components)
                 dgdy_reference_element = sum(spec.constituents.get(reference_element, 0) * self.GM.diff(v.SiteFraction(self.phase_name, idx, spec))
                         for spec in active)
-                dgdy_other_element = sum(spec.constituents.get(reference_element, 0) * self.GM.diff(v.SiteFraction(self.phase_name, idx, spec))
+                dgdy_other_element = sum(spec.constituents.get(other_element, 0) * self.GM.diff(v.SiteFraction(self.phase_name, idx, spec))
                         for spec in active)
                 if (dgdy_reference_element != 0) and (dgdy_other_element != 0):
                     # Hillert 2008, Eq. 4.58
