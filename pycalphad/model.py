@@ -396,7 +396,7 @@ class Model(object):
                 if (dgdy_reference_element != 0) and (dgdy_other_element != 0):
                     # Hillert 2008, Eq. 4.58
                     # XXX: This is not the correct solution for ionic liquids (variable valence)
-                    constraint = (normalization/self.site_ratios[idx]) * (dgdy_other_element - dgdy_reference_element) - \
+                    constraint = (1./self.site_ratios[idx]) * (dgdy_other_element - dgdy_reference_element) - \
                                  (v.MU(other_element) - v.MU(reference_element))
                     diffusion_potential_constraints.append(1e-4 * Symbol('NP') * constraint)
         return diffusion_potential_constraints
