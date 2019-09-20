@@ -825,6 +825,8 @@ cdef class Problem:
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                 x[var_offset:var_offset+compset.phase_record.phase_dof]
             x_tmp[num_statevars+compset.phase_record.phase_dof] = x[spidx]
+            x_tmp[num_statevars+compset.phase_record.phase_dof+1:
+                  num_statevars+compset.phase_record.phase_dof+1+chempots.shape[0]] = chempots
             compset.phase_record.dpot_constraints(l_constraints_tmp, x_tmp)
             for c_idx in range(compset.phase_record.num_dpot_cons):
                 l_constraints[constraint_offset + c_idx] += l_constraints_tmp[c_idx]
