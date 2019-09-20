@@ -356,6 +356,8 @@ cdef class Problem:
         var_idx = num_statevars
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
+            if compset.phase_record.num_dpot_cons == 0:
+                continue
             spidx = self.num_vars - len(self.nonvacant_elements) - self.num_phases + phase_idx
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                 x[var_idx:var_idx+compset.phase_record.phase_dof]
@@ -821,6 +823,8 @@ cdef class Problem:
         var_offset = num_statevars
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
+            if compset.phase_record.num_dpot_cons == 0:
+                continue
             spidx = self.num_vars - len(self.nonvacant_elements) - self.num_phases + phase_idx
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                 x[var_offset:var_offset+compset.phase_record.phase_dof]
@@ -927,6 +931,8 @@ cdef class Problem:
         # Third: Diffusion potential constraints
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
+            if compset.phase_record.num_dpot_cons == 0:
+                continue
             spidx = self.num_vars - len(self.nonvacant_elements) - self.num_phases + phase_idx
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                 x[var_offset:var_offset+compset.phase_record.phase_dof]
