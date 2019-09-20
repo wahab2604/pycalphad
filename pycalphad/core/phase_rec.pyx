@@ -72,14 +72,16 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
                                  self._obj, self._grad, self._hess, self._masses, self._massgrads,
                                  self._masshessians, self._internal_cons, self._internal_jac, self._internal_cons_hess,
                                  self._multiphase_cons, self._multiphase_jac, self._multiphase_cons_hess,
-                                 self.num_internal_cons, self.num_multiphase_cons)
+                                 self._dpot_cons, self._dpot_jac, self._dpot_cons_hess,
+                                 self.num_internal_cons, self.num_multiphase_cons, self.num_dpot_cons)
 
     def __cinit__(self, object comps, object state_variables, object variables,
                   double[::1] parameters, object ofunc, object gfunc, object hfunc,
                   object massfuncs, object massgradfuncs, object masshessianfuncs,
                   object internal_cons_func, object internal_jac_func, object internal_cons_hess_func,
                   object multiphase_cons_func, object multiphase_jac_func, object multiphase_cons_hess_func,
-                  size_t num_internal_cons, size_t num_multiphase_cons):
+                  object dpot_cons_func, object dpot_jac_func, object dpot_cons_hess_func,
+                  size_t num_internal_cons, size_t num_multiphase_cons, size_t num_dpot_cons):
         cdef:
             int var_idx, el_idx
         self.components = comps
@@ -96,6 +98,7 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
         self.parameters = parameters
         self.num_internal_cons = num_internal_cons
         self.num_multiphase_cons = num_multiphase_cons
+        self.num_dpot_cons = num_dpot_cons
 
         for variable in variables:
             if not isinstance(variable, v.SiteFraction):
@@ -121,6 +124,12 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
             self._multiphase_jac = FastFunction(multiphase_jac_func)
         if multiphase_cons_hess_func is not None:
             self._multiphase_cons_hess = FastFunction(multiphase_cons_hess_func)
+        if dpot_cons_func is not None:
+            self._dpot_cons = FastFunction(dpot_cons_func)
+        if dpot_jac_func is not None:
+            self._dpot_jac = FastFunction(dpot_jac_func)
+        if dpot_cons_hess_func is not None:
+            self._dpot_cons_hess = FastFunction(dpot_cons_hess_func)
         if massfuncs is not None:
             self._masses = np.empty(len(nonvacant_elements), dtype='object')
             for el_idx in range(len(nonvacant_elements)):
@@ -212,6 +221,30 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
     cpdef void multiphase_cons_hessian(self, double[:, :, ::1] out, double[::1] dof) nogil:
         cdef double* dof_concat = alloc_dof_with_parameters(dof, self.parameters)
         self._multiphase_cons_hess.call(&out[0, 0, 0], &dof_concat[0])
+        if self.parameters.shape[0] > 0:
+            free(dof_concat)
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void dpot_constraints(self, double[::1] out, double[::1] dof_with_phasefrac_and_mu) nogil:
+        cdef double* dof_concat = alloc_dof_with_parameters(dof_with_phasefrac_and_mu, self.parameters)
+        self._dpot_cons.call(&out[0], &dof_concat[0])
+        if self.parameters.shape[0] > 0:
+            free(dof_concat)
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void dpot_jacobian(self, double[:, ::1] out, double[::1] dof_with_phasefrac_and_mu) nogil:
+        cdef double* dof_concat = alloc_dof_with_parameters(dof_with_phasefrac_and_mu, self.parameters)
+        self._dpot_jac.call(&out[0, 0], &dof_concat[0])
+        if self.parameters.shape[0] > 0:
+            free(dof_concat)
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void dpot_cons_hessian(self, double[:, :, ::1] out, double[::1] dof_with_phasefrac_and_mu) nogil:
+        cdef double* dof_concat = alloc_dof_with_parameters(dof_with_phasefrac_and_mu, self.parameters)
+        self._dpot_cons_hess.call(&out[0, 0, 0], &dof_concat[0])
         if self.parameters.shape[0] > 0:
             free(dof_concat)
 

@@ -32,7 +32,8 @@ def _build_constraint_functions(variables, constraints, include_hess=False, para
 
 ConstraintTuple = namedtuple('ConstraintTuple', ['internal_cons', 'internal_jac', 'internal_cons_hess',
                                                  'multiphase_cons', 'multiphase_jac', 'multiphase_cons_hess',
-                                                 'num_internal_cons', 'num_multiphase_cons'])
+                                                 'dpot_cons', 'dpot_jac', 'dpot_cons_hess',
+                                                 'num_internal_cons', 'num_multiphase_cons', 'num_dpot_cons'])
 
 
 def is_multiphase_constraint(cond):
@@ -48,24 +49,37 @@ def build_constraints(mod, variables, conds, parameters=None):
     internal_constraints = [INTERNAL_CONSTRAINT_SCALING*x for x in internal_constraints]
     multiphase_constraints = mod.get_multiphase_constraints(conds)
     multiphase_constraints = [MULTIPHASE_CONSTRAINT_SCALING*x for x in multiphase_constraints]
-    # TODO: Conditions needing Hessians should probably have a 'second-order' tag or something
-    need_hess = True#any(type(c) in v.CONDITIONS_REQUIRING_HESSIANS for c in conds.keys())
+
+    dp_constraints = mod.get_diffusion_potential_constraints()
+
+    need_hess = True
+
     cf_output = _build_constraint_functions(variables, internal_constraints,
                                             include_hess=need_hess, parameters=parameters)
     internal_cons = cf_output.cons_func
     internal_jac = cf_output.cons_jac
     internal_cons_hess = cf_output.cons_hess
 
-    result_build = _build_constraint_functions(variables + [Symbol('NP')] + [v.MU(spec) for spec in mod.nonvacant_elements],
+    result_build = _build_constraint_functions(variables + [Symbol('NP')],
                                                multiphase_constraints, include_hess=need_hess,
                                                parameters=parameters)
     multiphase_cons = result_build.cons_func
     multiphase_jac = result_build.cons_jac
     multiphase_cons_hess = result_build.cons_hess
+
+    dp_build = _build_constraint_functions(variables + [Symbol('NP')] + [v.MU(spec) for spec in mod.nonvacant_elements],
+                                           dp_constraints, include_hess=need_hess,
+                                           parameters=parameters)
+    dpot_cons = dp_build.cons_func
+    dpot_jac = dp_build.cons_jac
+    dpot_cons_hess = dp_build.cons_hess
+
     return ConstraintTuple(internal_cons=internal_cons, internal_jac=internal_jac, internal_cons_hess=internal_cons_hess,
                            multiphase_cons=multiphase_cons, multiphase_jac=multiphase_jac, multiphase_cons_hess=multiphase_cons_hess,
-                           num_internal_cons=len(internal_constraints), num_multiphase_cons=len(multiphase_constraints))
+                           dpot_cons=dpot_cons, dpot_jac=dpot_jac, dpot_cons_hess=dpot_cons_hess,
+                           num_internal_cons=len(internal_constraints), num_multiphase_cons=len(multiphase_constraints),
+                           num_dpot_cons=len(dp_constraints))
 
 
 def get_multiphase_constraint_rhs(conds):
-    return [0] + [MULTIPHASE_CONSTRAINT_SCALING*float(value) for cond, value in conds.items() if is_multiphase_constraint(cond)]
+    return [MULTIPHASE_CONSTRAINT_SCALING*float(value) for cond, value in conds.items() if is_multiphase_constraint(cond)]

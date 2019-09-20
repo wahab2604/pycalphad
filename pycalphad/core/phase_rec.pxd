@@ -23,6 +23,9 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
     cdef FastFunction _multiphase_cons
     cdef FastFunction _multiphase_jac
     cdef FastFunction _multiphase_cons_hess
+    cdef FastFunction _dpot_cons
+    cdef FastFunction _dpot_jac
+    cdef FastFunction _dpot_cons_hess
     cdef numpy.ndarray _masses
     cdef void** _masses_ptr
     cdef numpy.ndarray _massgrads
@@ -31,6 +34,7 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
     cdef void** _masshessians_ptr
     cdef public size_t num_internal_cons
     cdef public size_t num_multiphase_cons
+    cdef public size_t num_dpot_cons
     cdef public object variables
     cdef public object state_variables
     cdef public object components
@@ -47,7 +51,10 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
     cpdef void internal_cons_hessian(self, double[:,:,::1] out, double[::1] dof) nogil
     cpdef void multiphase_constraints(self, double[::1] out, double[::1] dof_with_phasefrac) nogil
     cpdef void multiphase_jacobian(self, double[:,::1] out, double[::1] dof_with_phasefrac) nogil
-    cpdef void multiphase_cons_hessian(self, double[:, :, ::1] out, double[::1] dof) nogil
+    cpdef void multiphase_cons_hessian(self, double[:, :, ::1] out, double[::1] dof_with_phase_frac) nogil
+    cpdef void dpot_constraints(self, double[::1] out, double[::1] dof_with_phasefrac_and_mu) nogil
+    cpdef void dpot_jacobian(self, double[:,::1] out, double[::1] dof_with_phasefrac_and_mu) nogil
+    cpdef void dpot_cons_hessian(self, double[:, :, ::1] out, double[::1] dof_with_phasefrac_and_mu) nogil
     cpdef void mass_obj(self, double[::1] out, double[:, ::1] dof, int comp_idx) nogil
     cpdef void mass_grad(self, double[::1] out, double[::1] dof, int comp_idx) nogil
     cpdef void mass_hess(self, double[:,::1] out, double[::1] dof, int comp_idx) nogil

@@ -376,16 +376,28 @@ class Model(object):
             constraints.append(sum(v.SiteFraction(self.phase_name, idx, spec) for spec in sublattice) - 1)
         return constraints
 
+    def get_diffusion_potential_constraints(self):
+        "Relations between chemical potential differences and derivatives of the Gibbs energy."
+        diffusion_potential_constraints = []
+        reference_element = self.nonvacant_elements[0]
+        other_elements = self.nonvacant_elements[1:]
+        for other_element in other_elements:
+            for idx, sublattice in enumerate(self.constituents):
+                active = set(sublattice).intersection(self.components)
+                dgdy_reference_element = sum(spec.constituents.get(reference_element, 0) * self.GM.diff(v.SiteFraction(self.phase_name, idx, spec))
+                        for spec in active)
+                dgdy_other_element = sum(spec.constituents.get(reference_element, 0) * self.GM.diff(v.SiteFraction(self.phase_name, idx, spec))
+                        for spec in active)
+                if (dgdy_reference_element != 0) and (dgdy_other_element != 0):
+                    # Hillert 2008, Eq. 4.58
+                    # XXX: This is not the correct solution for ionic liquids (variable valence)
+                    constraint = (1./self.site_ratios[idx]) * (dgdy_other_element - dgdy_reference_element) - \
+                                 (v.MU(other_element) - v.MU(reference_element))
+                    diffusion_potential_constraints.append(Symbol('NP') * constraint)
+        return diffusion_potential_constraints
+
     def get_multiphase_constraints(self, conds):
-        fixed_chempots = [cond for cond in conds.keys() if isinstance(cond, v.ChemicalPotential)]
         multiphase_constraints = []
-        # Tangent hyperplane constraint
-        driving_force = (self.GM - sum(v.MU(spec) * self.moles(spec) for spec in self.nonvacant_elements))
-        df_gradient = [sum([self.GM.diff(x)/self.moles(spec).diff(x) for x in self.site_fractions])
-                       for spec in self.nonvacant_elements]
-        diffusion_potentials = sum([(v.MU(spec) - v.MU(self.nonvacant_elements[0]) - dgdx + df_gradient[0])
-                                    for dgdx, spec in zip(df_gradient[1:], self.nonvacant_elements[1:])])
-        multiphase_constraints.append(Symbol('NP') * diffusion_potentials)
         for statevar in sorted(conds.keys(), key=str):
             if not is_multiphase_constraint(statevar):
                 continue
