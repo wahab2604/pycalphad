@@ -56,7 +56,7 @@ def build_constraints(mod, variables, conds, parameters=None):
     internal_jac = cf_output.cons_jac
     internal_cons_hess = cf_output.cons_hess
 
-    result_build = _build_constraint_functions(variables + [Symbol('NP')],
+    result_build = _build_constraint_functions(variables + [Symbol('NP')] + [v.MU(spec) for spec in mod.nonvacant_elements],
                                                multiphase_constraints, include_hess=need_hess,
                                                parameters=parameters)
     multiphase_cons = result_build.cons_func
@@ -68,4 +68,4 @@ def build_constraints(mod, variables, conds, parameters=None):
 
 
 def get_multiphase_constraint_rhs(conds):
-    return [MULTIPHASE_CONSTRAINT_SCALING*float(value) for cond, value in conds.items() if is_multiphase_constraint(cond)]
+    return [0] + [MULTIPHASE_CONSTRAINT_SCALING*float(value) for cond, value in conds.items() if is_multiphase_constraint(cond)]

@@ -121,82 +121,68 @@ cdef class Problem:
             self.cu[var_idx] = 0
 
     def objective(self, x_in):
-        cdef CompositionSet compset = self.composition_sets[0]
-        cdef int phase_idx
+        cdef CompositionSet compset
+        cdef int phase_idx = 0
         cdef double total_obj = 0
         cdef int var_offset = 0
-        cdef int chempot_idx, comp_idx
+        cdef int chempot_idx
+        cdef int idx = 0
         cdef double[::1] x = np.array(x_in)
         cdef double tmp = 0
         cdef double mass_tmp = 0
-        cdef double[:,::1] dof_2d_view
-        cdef double[::1] chempots = np.zeros(len(self.nonvacant_elements))
-        cdef double[::1] moles = np.zeros(len(self.nonvacant_elements))
-        cdef double[::1] moles_view
-
+        cdef double[:,::1] dof_2d_view = <double[:1,:x.shape[0]]>&x[0]
+        cdef double[::1] energy_2d_view = <double[:1]>&tmp
+        compset = self.composition_sets[0]
         var_offset = len(compset.phase_record.state_variables)
 
-        chempots[:] = x[-len(self.nonvacant_elements):]
-
-        for phase_idx in range(self.num_phases):
-            compset = self.composition_sets[phase_idx]
+        for compset in self.composition_sets:
             x = np.r_[x_in[:len(compset.phase_record.state_variables)], x_in[var_offset:var_offset+compset.phase_record.phase_dof]]
             dof_2d_view = <double[:1,:x.shape[0]]>&x[0]
-            for comp_idx in range(moles.shape[0]):
-                moles_view = <double[:1]>&moles[comp_idx]
-                compset.phase_record.mass_obj(moles_view, dof_2d_view, comp_idx)
-            total_obj += x_in[self.num_vars-len(self.nonvacant_elements)-self.num_phases+phase_idx] * np.dot(chempots, moles)
+            compset.phase_record.obj(energy_2d_view, dof_2d_view)
+            idx = 0
+            total_obj += x_in[self.num_vars-len(self.nonvacant_elements)-self.num_phases+phase_idx] * tmp
+            phase_idx += 1
             var_offset += compset.phase_record.phase_dof
-            moles[:] = 0
-        #print('total_obj is', total_obj)
+            tmp = 0
         return total_obj
 
     def gradient(self, x_in):
         cdef CompositionSet compset = self.composition_sets[0]
-        cdef int phase_idx = 0
-        cdef double phase_amt = 0
+        cdef int phase_idx
         cdef int num_statevars = len(compset.phase_record.state_variables)
         cdef int var_offset = num_statevars
-        cdef int dof_x_idx
+        cdef int dof_x_idx, spidx
         cdef int idx = 0
         cdef double total_obj = 0
         cdef double[::1] x = np.array(x_in)
+        cdef double tmp = 0
+        cdef double mass_obj_tmp = 0
         cdef double[:,::1] dof_2d_view = <double[:1,:x.shape[0]]>&x[0]
-        cdef double[::1] chempots = np.zeros(len(self.nonvacant_elements))
-        cdef double[::1] moles = np.zeros(len(self.nonvacant_elements))
-        cdef double[::1] moles_view
-        cdef double[:, ::1] moles_gradient = np.zeros((len(self.nonvacant_elements), self.num_vars))
-        cdef double[::1] moles_gradient_view
+        cdef double[::1] energy_2d_view = <double[:1]>&tmp
+        cdef double[::1] grad_tmp = np.zeros(x.shape[0])
+        cdef double[::1] out_mass_tmp = np.zeros(self.num_vars)
         cdef np.ndarray[ndim=1, dtype=np.float64_t] gradient_term = np.zeros(self.num_vars)
-
-        chempots[:] = x[-len(self.nonvacant_elements):]
 
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
-            phase_amt = x_in[self.num_vars-len(self.nonvacant_elements)-self.num_phases+phase_idx]
             x = np.r_[x_in[:num_statevars], x_in[var_offset:var_offset+compset.phase_record.phase_dof]]
+            spidx = self.num_vars - len(self.nonvacant_elements) - self.num_phases + phase_idx
             dof_2d_view = <double[:1,:x.shape[0]]>&x[0]
-            for comp_idx in range(moles.shape[0]):
-                moles_view = <double[:1]>&moles[comp_idx]
-                moles_gradient_view = <double[:num_statevars+compset.phase_record.phase_dof]>&moles_gradient[comp_idx, 0]
-                compset.phase_record.mass_obj(moles_view, dof_2d_view, comp_idx)
-                compset.phase_record.mass_grad(moles_gradient_view, x, comp_idx)
+            compset.phase_record.obj(energy_2d_view, dof_2d_view)
+            compset.phase_record.grad(grad_tmp, x)
             for dof_x_idx in range(num_statevars):
-                gradient_term[dof_x_idx] += phase_amt * np.dot(chempots, moles_gradient[:, dof_x_idx])
+                gradient_term[dof_x_idx] += x_in[spidx] * grad_tmp[dof_x_idx]
             for dof_x_idx in range(compset.phase_record.phase_dof):
                 gradient_term[var_offset + dof_x_idx] = \
-                    phase_amt * np.dot(chempots, moles_gradient[:, num_statevars+dof_x_idx])
-            # wrt phase amount
-            gradient_term[self.num_vars - len(self.nonvacant_elements) - self.num_phases + phase_idx] += np.dot(chempots, moles)
-
-            # wrt chemical potentials
-            for comp_idx in range(chempots.shape[0]):
-                gradient_term[self.num_vars - chempots.shape[0] + comp_idx] += phase_amt * moles[comp_idx]
-            moles[:] = 0
-            moles_gradient[:,:] = 0
+                    x_in[spidx] * grad_tmp[num_statevars+dof_x_idx]
+            idx = 0
+            gradient_term[spidx] += tmp
+            grad_tmp[:] = 0
+            tmp = 0
+            energy_2d_view = <double[:1]>&tmp
             var_offset += compset.phase_record.phase_dof
+            phase_idx += 1
 
-        #print('gradient_term', np.array(gradient_term))
         gradient_term[np.isnan(gradient_term)] = 0
         return gradient_term
 
@@ -369,6 +355,8 @@ cdef class Problem:
         cdef int idx, phase_idx, idx_row, idx_col, iter_idx, cons_idx, spidx
         cdef size_t chempot_idx = self.num_vars - chempots.shape[0]
 
+        chempots[:] = x[-len(self.nonvacant_elements):]
+
         x_tmp[:num_statevars] = x[:num_statevars]
         # First: Fixed degree of freedom constraints (linear)
         constraint_offset += self.num_fixed_dof_constraints
@@ -412,9 +400,11 @@ cdef class Problem:
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                 x[var_idx:var_idx+compset.phase_record.phase_dof]
             x_tmp[num_statevars+compset.phase_record.phase_dof] = x[spidx]
+            x_tmp[num_statevars+compset.phase_record.phase_dof+1:
+                  num_statevars+compset.phase_record.phase_dof+1+chempots.shape[0]] = chempots
             constraint_hess_tmp_view = <double[:compset.phase_record.num_multiphase_cons,
-                                               :num_statevars+1+compset.phase_record.phase_dof,
-                                               :num_statevars+1+compset.phase_record.phase_dof]>&constraint_hess_tmp[0]
+                                               :num_statevars+1+compset.phase_record.phase_dof+chempots.shape[0],
+                                               :num_statevars+1+compset.phase_record.phase_dof+chempots.shape[0]]>&constraint_hess_tmp[0]
             compset.phase_record.multiphase_cons_hessian(constraint_hess_tmp_view, x_tmp)
             for cons_idx in range(compset.phase_record.num_multiphase_cons):
                 for idx_row in range(num_statevars):
@@ -424,6 +414,20 @@ cdef class Problem:
                         if idx_row != idx_col:
                             hess[idx_col, idx_row] += lmul[constraint_offset + cons_idx] * \
                                                     constraint_hess_tmp_view[cons_idx, idx_col, idx_row]
+                    for idx_col in range(compset.phase_record.phase_dof):
+                        hess[idx_row, var_idx + idx_col] += lmul[constraint_offset + cons_idx] * \
+                                                    constraint_hess_tmp_view[cons_idx, idx_row, num_statevars+idx_col]
+                        hess[var_idx + idx_col, idx_row] += lmul[constraint_offset + cons_idx] * \
+                                                    constraint_hess_tmp_view[cons_idx, num_statevars+idx_col, idx_row]
+                    for idx_col in range(chempots.shape[0]):
+                        hess[hess.shape[0]-chempots.shape[0]+idx_col, idx_row] += lmul[constraint_offset + cons_idx] * \
+                                                  constraint_hess_tmp_view[cons_idx,
+                                                                           constraint_hess_tmp_view.shape[2]-chempots.shape[0]+idx_col,
+                                                                           idx_row]
+                        hess[idx_row, hess.shape[0]-chempots.shape[0]+idx_col] += lmul[constraint_offset + cons_idx] * \
+                                                  constraint_hess_tmp_view[cons_idx,
+                                                                           idx_row,
+                                                                           constraint_hess_tmp_view.shape[2]-chempots.shape[0]+idx_col]
                 for idx_row in range(compset.phase_record.phase_dof):
                     for idx_col in range(idx_row, compset.phase_record.phase_dof):
                         hess[var_idx + idx_row, var_idx + idx_col] += lmul[constraint_offset + cons_idx] * \
@@ -431,13 +435,36 @@ cdef class Problem:
                         if idx_row != idx_col:
                             hess[var_idx + idx_col, var_idx + idx_row] += lmul[constraint_offset + cons_idx] * \
                                                   constraint_hess_tmp_view[cons_idx, num_statevars+idx_col, num_statevars+idx_row]
+                    for idx_col in range(chempots.shape[0]):
+                        hess[hess.shape[0]-chempots.shape[0]+idx_col, var_idx+idx_row] += lmul[constraint_offset + cons_idx] * \
+                                                  constraint_hess_tmp_view[cons_idx,
+                                                                           constraint_hess_tmp_view.shape[2]-chempots.shape[0]+idx_col,
+                                                                           num_statevars+idx_row]
+                        hess[var_idx+idx_row, hess.shape[0]-chempots.shape[0]+idx_col] += lmul[constraint_offset + cons_idx] * \
+                                                  constraint_hess_tmp_view[cons_idx,
+                                                                           num_statevars+idx_row,
+                                                                           constraint_hess_tmp_view.shape[2]-chempots.shape[0]+idx_col]
+                for idx_row in range(chempots.shape[0]):
+                    for idx_col in range(idx_row, chempots.shape[0]):
+                        hess[hess.shape[0]-chempots.shape[0]+idx_col, hess.shape[0]-chempots.shape[0]+idx_row] += lmul[constraint_offset + cons_idx] * \
+                                                  constraint_hess_tmp_view[cons_idx,
+                                                                           constraint_hess_tmp_view.shape[2]-chempots.shape[0]+idx_col,
+                                                                           constraint_hess_tmp_view.shape[2]-chempots.shape[0]+idx_row]
+                        if idx_row != idx_col:
+                            hess[hess.shape[0]-chempots.shape[0]+idx_row, hess.shape[0]-chempots.shape[0]+idx_col] += lmul[constraint_offset + cons_idx] * \
+                                                      constraint_hess_tmp_view[cons_idx,
+                                                                               constraint_hess_tmp_view.shape[2]-chempots.shape[0]+idx_row,
+                                                                               constraint_hess_tmp_view.shape[2]-chempots.shape[0]+idx_col]
                 # wrt phase amount
                 for idx_row in range(num_statevars):
-                    hess[idx_row, spidx] += lmul[constraint_offset + cons_idx] * constraint_hess_tmp_view[cons_idx, idx_row, -1]
-                    hess[spidx, idx_row] += lmul[constraint_offset + cons_idx] * constraint_hess_tmp_view[cons_idx, -1, idx_row]
+                    hess[idx_row, spidx] += lmul[constraint_offset + cons_idx] * constraint_hess_tmp_view[cons_idx, idx_row, constraint_hess_tmp_view.shape[2]-chempots.shape[0]-1]
+                    hess[spidx, idx_row] += lmul[constraint_offset + cons_idx] * constraint_hess_tmp_view[cons_idx, constraint_hess_tmp_view.shape[2]-chempots.shape[0]-1, idx_row]
                 for idx_row in range(compset.phase_record.phase_dof):
-                    hess[var_idx + idx_row, spidx] += lmul[constraint_offset + cons_idx] * constraint_hess_tmp_view[cons_idx, num_statevars + idx_row, -1]
-                    hess[spidx, var_idx + idx_row] += lmul[constraint_offset + cons_idx] * constraint_hess_tmp_view[cons_idx, -1, num_statevars + idx_row]
+                    hess[var_idx + idx_row, spidx] += lmul[constraint_offset + cons_idx] * constraint_hess_tmp_view[cons_idx, num_statevars + idx_row, constraint_hess_tmp_view.shape[2]-chempots.shape[0]-1]
+                    hess[spidx, var_idx + idx_row] += lmul[constraint_offset + cons_idx] * constraint_hess_tmp_view[cons_idx, constraint_hess_tmp_view.shape[2]-chempots.shape[0]-1, num_statevars + idx_row]
+                for idx_row in range(chempots.shape[0]):
+                    hess[hess.shape[0]-chempots.shape[0]+idx_row, spidx] += lmul[constraint_offset + cons_idx] * constraint_hess_tmp_view[cons_idx, constraint_hess_tmp_view.shape[2]-chempots.shape[0]+idx_row, constraint_hess_tmp_view.shape[2]-chempots.shape[0]-1]
+                    hess[spidx, hess.shape[0]-chempots.shape[0]+idx_row] += lmul[constraint_offset + cons_idx] * constraint_hess_tmp_view[cons_idx, constraint_hess_tmp_view.shape[2]-chempots.shape[0]-1, constraint_hess_tmp_view.shape[2]-chempots.shape[0]+idx_row]
             x_tmp[num_statevars:] = 0
             constraint_hess_tmp[:] = 0
             var_idx += compset.phase_record.phase_dof
@@ -445,7 +472,6 @@ cdef class Problem:
 
         # Fourth: Gibbs-Duhem relations
         var_idx = num_statevars
-        chempots[:] = x[-len(self.nonvacant_elements):]
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
             spidx = self.num_vars - len(self.nonvacant_elements) - self.num_phases + phase_idx
@@ -763,6 +789,7 @@ cdef class Problem:
         cdef int phase_idx, var_offset, constraint_offset, var_idx, idx, spidx
         cdef double[::1] x_tmp = np.zeros(x.shape[0])
         cdef double phase_amt
+        chempots[:] = x[-len(self.nonvacant_elements):]
         x_tmp[:num_statevars] = x[:num_statevars]
 
         # First: Fixed degree of freedom constraints
@@ -792,6 +819,8 @@ cdef class Problem:
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                 x[var_offset:var_offset+compset.phase_record.phase_dof]
             x_tmp[num_statevars+compset.phase_record.phase_dof] = x[spidx]
+            x_tmp[num_statevars+compset.phase_record.phase_dof+1:
+                  num_statevars+compset.phase_record.phase_dof+1+chempots.shape[0]] = chempots
             compset.phase_record.multiphase_constraints(l_constraints_tmp, x_tmp)
             for c_idx in range(compset.phase_record.num_multiphase_cons):
                 l_constraints[constraint_offset + c_idx] += l_constraints_tmp[c_idx]
@@ -801,7 +830,6 @@ cdef class Problem:
         constraint_offset += compset.phase_record.num_multiphase_cons
 
         # Fourth: Gibbs-Duhem relations
-        chempots[:] = x[-len(self.nonvacant_elements):]
         var_offset = num_statevars
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
@@ -820,6 +848,7 @@ cdef class Problem:
             moles[:] = 0
             constraint_offset += 1
             var_offset += compset.phase_record.phase_dof
+        print('l_constraints', np.array(l_constraints))
         return np.array(l_constraints)
 
     def jacobian(self, x_in):
@@ -841,6 +870,7 @@ cdef class Problem:
         cdef int phase_idx, var_offset, constraint_offset, var_idx, iter_idx, grad_idx, \
             hess_idx, comp_idx, idx, sum_idx, spidx, active_in_subl, phase_offset
 
+        chempots[:] = x[-len(self.nonvacant_elements):]
         x_tmp[:num_statevars] = x[:num_statevars]
 
         # First: Fixed degree of freedom constraints
@@ -879,15 +909,19 @@ cdef class Problem:
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                 x[var_offset:var_offset+compset.phase_record.phase_dof]
             x_tmp[num_statevars+compset.phase_record.phase_dof] = x[spidx]
+            x_tmp[num_statevars+compset.phase_record.phase_dof+1:
+                  num_statevars+compset.phase_record.phase_dof+1+chempots.shape[0]] = chempots
             constraint_jac_tmp_view = <double[:compset.phase_record.num_multiphase_cons,
-                                              :num_statevars+1+compset.phase_record.phase_dof]>&constraint_jac_tmp[0,0]
+                                              :num_statevars+1+compset.phase_record.phase_dof+chempots.shape[0]]>&constraint_jac_tmp[0,0]
             compset.phase_record.multiphase_jacobian(constraint_jac_tmp_view, x_tmp)
             for idx in range(compset.phase_record.num_multiphase_cons):
                 for iter_idx in range(compset.phase_record.phase_dof):
                     constraint_jac[constraint_offset+idx, var_offset+iter_idx] = constraint_jac_tmp_view[idx, num_statevars+iter_idx]
                 for iter_idx in range(num_statevars):
                     constraint_jac[constraint_offset+idx, iter_idx] += constraint_jac_tmp_view[idx, iter_idx]
-                constraint_jac[constraint_offset+idx, spidx] = constraint_jac_tmp_view[idx, -1]
+                for iter_idx in range(chempots.shape[0]):
+                    constraint_jac[constraint_offset+idx, constraint_jac.shape[1]-chempots.shape[0]+iter_idx] += constraint_jac_tmp_view[idx, constraint_jac_tmp_view.shape[1]-chempots.shape[0]+iter_idx]
+                constraint_jac[constraint_offset+idx, spidx] = constraint_jac_tmp_view[idx, constraint_jac_tmp_view.shape[1]-chempots.shape[0]-1]
             x_tmp[num_statevars:] = 0
             constraint_jac_tmp[:,:] = 0
             var_offset += compset.phase_record.phase_dof

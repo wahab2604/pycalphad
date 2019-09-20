@@ -379,6 +379,13 @@ class Model(object):
     def get_multiphase_constraints(self, conds):
         fixed_chempots = [cond for cond in conds.keys() if isinstance(cond, v.ChemicalPotential)]
         multiphase_constraints = []
+        # Tangent hyperplane constraint
+        driving_force = (self.GM - sum(v.MU(spec) * self.moles(spec) for spec in self.nonvacant_elements))
+        df_gradient = [sum([self.GM.diff(x)/self.moles(spec).diff(x) for x in self.site_fractions])
+                       for spec in self.nonvacant_elements]
+        diffusion_potentials = sum([(v.MU(spec) - v.MU(self.nonvacant_elements[0]) - dgdx + df_gradient[0])
+                                    for dgdx, spec in zip(df_gradient[1:], self.nonvacant_elements[1:])])
+        multiphase_constraints.append(Symbol('NP') * diffusion_potentials)
         for statevar in sorted(conds.keys(), key=str):
             if not is_multiphase_constraint(statevar):
                 continue
