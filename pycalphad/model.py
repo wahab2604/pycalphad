@@ -381,6 +381,11 @@ class Model(object):
         diffusion_potential_constraints = []
         reference_element = self.nonvacant_elements[0]
         other_elements = self.nonvacant_elements[1:]
+        normalization = S.Zero
+        for idx, sublattice in enumerate(self.constituents):
+            active = set(sublattice).intersection(self.components)
+            if v.Species(reference_element) in active:
+                normalization += self.site_ratios[idx]
         for other_element in other_elements:
             for idx, sublattice in enumerate(self.constituents):
                 active = set(sublattice).intersection(self.components)
@@ -391,9 +396,9 @@ class Model(object):
                 if (dgdy_reference_element != 0) and (dgdy_other_element != 0):
                     # Hillert 2008, Eq. 4.58
                     # XXX: This is not the correct solution for ionic liquids (variable valence)
-                    constraint = (1./self.site_ratios[idx]) * (dgdy_other_element - dgdy_reference_element) - \
+                    constraint = (normalization/self.site_ratios[idx]) * (dgdy_other_element - dgdy_reference_element) - \
                                  (v.MU(other_element) - v.MU(reference_element))
-                    diffusion_potential_constraints.append(Symbol('NP') * constraint)
+                    diffusion_potential_constraints.append(1e-4 * Symbol('NP') * constraint)
         return diffusion_potential_constraints
 
     def get_multiphase_constraints(self, conds):
