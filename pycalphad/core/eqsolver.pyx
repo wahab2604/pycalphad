@@ -164,10 +164,10 @@ cdef bint add_new_phases(object composition_sets, object removed_compsets, objec
     return False
 
 
-cdef _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem, iter_solver):
+cdef _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem, chempot_guess, iter_solver):
     "Mutates composititon_sets with updated values if it converges. Returns SolverResult."
     cdef CompositionSet compset
-    prob = problem(composition_sets, comps, cur_conds)
+    prob = problem(composition_sets, comps, cur_conds, np.array(chempot_guess).flatten())
     result = iter_solver.solve(prob)
     composition_sets = prob.composition_sets
     if result.converged:
@@ -294,7 +294,7 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
         iterations = 0
         history = []
         while (iterations < 10) and (not iter_solver.ignore_convergence):
-            result = _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem, iter_solver)
+            result = _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem, chemical_potentials, iter_solver)
 
             if result.converged:
                 previous_compsets = [(compset.phase_record.phase_name,np.array(compset.dof),compset.NP) for compset in composition_sets]
@@ -326,7 +326,7 @@ def _solve_eq_at_conditions(comps, properties, phase_records, grid, conds_keys, 
             if not changed_phases:
                 break
         if changed_phases:
-            result = _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem, iter_solver)
+            result = _solve_and_update_if_converged(composition_sets, comps, cur_conds, problem, chemical_potentials, iter_solver)
             chemical_potentials[:] = result.chemical_potentials
         if not iter_solver.ignore_convergence:
             converged = result.converged

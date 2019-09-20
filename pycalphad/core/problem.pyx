@@ -38,7 +38,7 @@ def _pinv_derivative(a, a_pinv, a_prime):
 
 
 cdef class Problem:
-    def __init__(self, comp_sets, comps, conditions):
+    def __init__(self, comp_sets, comps, conditions, initial_chemical_potentials):
         cdef CompositionSet compset
         cdef int num_internal_cons = sum(compset.phase_record.num_internal_cons for compset in comp_sets)
         cdef int num_dpot_cons = sum(compset.phase_record.num_dpot_cons for compset in comp_sets)
@@ -104,6 +104,8 @@ cdef class Problem:
             self.x0[self.num_vars-len(self.nonvacant_elements)-self.num_phases+phase_idx] = compset.NP
             var_idx += compset.phase_record.phase_dof
             phase_idx += 1
+        for var_idx in range(len(self.nonvacant_elements)):
+            self.x0[self.num_vars-len(self.nonvacant_elements)+var_idx] = initial_chemical_potentials[var_idx]
         self.cl = np.zeros(num_constraints)
         self.cu = np.zeros(num_constraints)
         compset = comp_sets[0]
