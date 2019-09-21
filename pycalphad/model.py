@@ -381,28 +381,41 @@ class Model(object):
         diffusion_potential_constraints = []
         reference_element = self.nonvacant_elements[0]
         other_elements = self.nonvacant_elements[1:]
-        normalization = S.Zero
-        for idx, sublattice in enumerate(self.constituents):
-            active = set(sublattice).intersection(self.components)
-            if v.Species(reference_element) in active:
-                normalization += self.site_ratios[idx]
+
         for other_element in other_elements:
             for idx, sublattice in enumerate(self.constituents):
                 active = set(sublattice).intersection(self.components)
+                # If there are vacancies in this sublattice, use it as a reference element instead, so skip here
+                if v.Species('VA') in active:
+                    continue
+                prefactor = S.One
+                prefactor *= Mul(*[spec.constituents.get(reference_element, 0) * \
+                                   v.SiteFraction(self.phase_name, idx, spec)
+                                   for spec in active if spec.constituents.get(reference_element, 0)>0])
+                prefactor *= Mul(*[spec.constituents.get(other_element, 0) * \
+                                   v.SiteFraction(self.phase_name, idx, spec)
+                                   for spec in active if spec.constituents.get(other_element, 0)>0])
                 dgdy_reference_element = sum(spec.constituents.get(reference_element, 0) * self.GM.diff(v.SiteFraction(self.phase_name, idx, spec))
                         for spec in active)
                 dgdy_other_element = sum(spec.constituents.get(other_element, 0) * self.GM.diff(v.SiteFraction(self.phase_name, idx, spec))
                         for spec in active)
                 if (dgdy_reference_element != 0) and (dgdy_other_element != 0):
                     # Hillert 2008, Eq. 4.58
-                    constraint = (1./self.site_ratios[idx]) * (dgdy_other_element - dgdy_reference_element) - \
+                    constraint = (self._site_ratio_normalization/self.site_ratios[idx]) * (dgdy_other_element - dgdy_reference_element) - \
                                  (v.MU(other_element) - v.MU(reference_element))
-                    diffusion_potential_constraints.append(1e-4 * Symbol('NP') * constraint)
+                    diffusion_potential_constraints.append(1e-6 * Symbol('NP') * constraint)
         if 'VA' in self.pure_elements:
             reference_element = 'VA'
             for other_element in other_elements:
                 for idx, sublattice in enumerate(self.constituents):
                     active = set(sublattice).intersection(self.components)
+                    prefactor = S.One
+                    prefactor *= Mul(*[spec.constituents.get(reference_element, 0) * \
+                                       v.SiteFraction(self.phase_name, idx, spec)
+                                       for spec in active if spec.constituents.get(reference_element, 0) > 0])
+                    prefactor *= Mul(*[spec.constituents.get(other_element, 0) * \
+                                       v.SiteFraction(self.phase_name, idx, spec)
+                                       for spec in active if spec.constituents.get(other_element, 0) > 0])
                     dgdy_reference_element = sum(spec.constituents.get(reference_element, 0) * self.GM.diff(v.SiteFraction(self.phase_name, idx, spec))
                             for spec in active)
                     dgdy_other_element = sum(spec.constituents.get(other_element, 0) * self.GM.diff(v.SiteFraction(self.phase_name, idx, spec))
@@ -410,9 +423,9 @@ class Model(object):
                     if (dgdy_reference_element != 0) and (dgdy_other_element != 0):
                         # Hillert 2008, Eq. 4.58
                         # MU(VA) = 0 at equilibrium, by construction
-                        constraint = (1./self.site_ratios[idx]) * (dgdy_other_element - dgdy_reference_element) - \
+                        constraint = (self._site_ratio_normalization/self.site_ratios[idx]) * (dgdy_other_element - dgdy_reference_element) - \
                                      (v.MU(other_element))
-                        diffusion_potential_constraints.append(1e-4 * Symbol('NP') * constraint)
+                        diffusion_potential_constraints.append(1e-6 * Symbol('NP') * constraint)
         return diffusion_potential_constraints
 
     def get_multiphase_constraints(self, conds):

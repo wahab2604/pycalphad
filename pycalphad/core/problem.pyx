@@ -104,8 +104,8 @@ cdef class Problem:
             self.x0[self.num_vars-len(self.nonvacant_elements)-self.num_phases+phase_idx] = compset.NP
             var_idx += compset.phase_record.phase_dof
             phase_idx += 1
-        for var_idx in range(len(self.nonvacant_elements)):
-            self.x0[self.num_vars-len(self.nonvacant_elements)+var_idx] = initial_chemical_potentials[var_idx]
+        #for var_idx in range(len(self.nonvacant_elements)):
+        #    self.x0[self.num_vars-len(self.nonvacant_elements)+var_idx] = initial_chemical_potentials[var_idx]
         self.cl = np.zeros(num_constraints)
         self.cu = np.zeros(num_constraints)
         compset = comp_sets[0]
@@ -876,7 +876,7 @@ cdef class Problem:
             moles[:] = 0
             constraint_offset += 1
             var_offset += compset.phase_record.phase_dof
-        print('l_constraints', np.array(l_constraints))
+        #print('l_constraints', np.array(l_constraints))
         return np.array(l_constraints)
 
     def jacobian(self, x_in):
