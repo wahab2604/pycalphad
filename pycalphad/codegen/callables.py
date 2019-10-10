@@ -85,6 +85,7 @@ def build_callables(dbf, comps, phases, models, parameter_symbols=None,
         'internal_cons_hess': {},
         'mp_cons': {},
         'mp_jac': {},
+        'param_grad_callables': {}
     }
 
     state_variables = get_state_variables(models=models)
@@ -119,16 +120,20 @@ def build_callables(dbf, comps, phases, models, parameter_symbols=None,
 
         # Build the callables for mass
         # TODO: In principle, we should also check for undefs in mod.moles()
-        mcf, mgf, mhf = zip(*[build_functions(mod.moles(el), state_variables + site_fracs,
-                                              include_obj=True,
-                                              include_grad=build_gradients,
-                                              include_hess=build_hessians,
-                                              parameters=parameter_symbols)
-                              for el in pure_elements])
+        mcf, mgf, mhf, _ = zip(*[build_functions(mod.moles(el), state_variables + site_fracs,
+                                                 include_obj=True,
+                                                 include_grad=build_gradients,
+                                                 include_hess=build_hessians,
+                                                 parameters=parameter_symbols)
+                               for el in pure_elements])
 
         _callables['massfuncs'][name] = mcf
         _callables['massgradfuncs'][name] = mgf
         _callables['masshessfuncs'][name] = mhf
+
+        build_output = build_functions(out, tuple(state_variables + site_fracs), parameters=parameter_symbols,
+                                            include_grad=build_gradients, include_hess=False)
+        _callables['param_grad_callables'][name] = build_output.param_grad
     return {output: _callables}
 
 
@@ -223,6 +228,7 @@ def build_phase_records(dbf, comps, phases, conds, models, output='GM',
                                                   callables[output]['massfuncs'][name],
                                                   callables[output]['massgradfuncs'][name],
                                                   callables[output]['masshessfuncs'][name],
+                                                  callables[output]['param_grad_callables'][name],
                                                   _constraints['internal_cons'][name],
                                                   _constraints['internal_jac'][name],
                                                   _constraints['internal_cons_hess'][name],
