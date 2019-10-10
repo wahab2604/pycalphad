@@ -52,5 +52,5 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
     cpdef void mass_obj(self, double[::1] out, double[:, ::1] dof, int comp_idx) nogil
     cpdef void mass_grad(self, double[::1] out, double[::1] dof, int comp_idx) nogil
     cpdef void mass_hess(self, double[:,::1] out, double[::1] dof, int comp_idx) nogil
-    cpdef void parameter_grad(self, double[:,::1] out, double[::1] dof, double[::1] parameters) nogil
+    cpdef void parameter_grad(self, double[:,::1] out, double[::1] dof) nogil
 
