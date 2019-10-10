@@ -70,14 +70,15 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
     def __reduce__(self):
             return PhaseRecord, (self.components, self.state_variables, self.variables, np.array(self.parameters),
                                  self._obj, self._grad, self._hess, self._masses, self._massgrads,
-                                 self._masshessians, self._internal_cons, self._internal_jac, self._internal_cons_hess,
+                                 self._masshessians, self._param_obj_grad, self._param_grad,
+                                 self._internal_cons, self._internal_jac, self._internal_cons_hess,
                                  self._multiphase_cons, self._multiphase_jac, self._multiphase_cons_hess,
                                  self.num_internal_cons, self.num_multiphase_cons)
 
     def __cinit__(self, object comps, object state_variables, object variables,
                   double[::1] parameters, object ofunc, object gfunc, object hfunc,
                   object massfuncs, object massgradfuncs, object masshessianfuncs,
-                  object paramgradfunc,
+                  object paramobjgradfunc, object paramgradfunc,
                   object internal_cons_func, object internal_jac_func, object internal_cons_hess_func,
                   object multiphase_cons_func, object multiphase_jac_func, object multiphase_cons_hess_func,
                   size_t num_internal_cons, size_t num_multiphase_cons):
@@ -137,6 +138,8 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
             for el_idx in range(len(nonvacant_elements)):
                 self._masshessians[el_idx] = FastFunction(masshessianfuncs[el_idx])
             self._masshessians_ptr = <void**> self._masshessians.data
+        if paramobjgradfunc is not None:
+            self._param_obj_grad = FastFunction(paramobjgradfunc)
         if paramgradfunc is not None:
             self._param_grad = FastFunction(paramgradfunc)
 
@@ -248,8 +251,16 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void parameter_grad(self, double[:,::1] out, double[::1] dof) nogil:
-        cdef double* dof_concat = alloc_dof_with_parameters(dof, self.parameters)
+    cpdef void parameter_obj_grad(self, double[::1] out, double[::1] dof, double[::1] parameters) nogil:
+        cdef double* dof_concat = alloc_dof_with_parameters(dof, parameters)
+        self._param_obj_grad.call(&out[0], &dof_concat[0])
+        if parameters.shape[0] > 0:
+            free(dof_concat)
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cpdef void parameter_grad(self, double[:,::1] out, double[::1] dof, double[::1] parameters) nogil:
+        cdef double* dof_concat = alloc_dof_with_parameters(dof, parameters)
         self._param_grad.call(&out[0,0], &dof_concat[0])
-        if self.parameters.shape[0] > 0:
+        if parameters.shape[0] > 0:
             free(dof_concat)

@@ -29,6 +29,7 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
     cdef void** _massgrads_ptr
     cdef numpy.ndarray _masshessians
     cdef void** _masshessians_ptr
+    cdef FastFunction _param_obj_grad
     cdef FastFunction _param_grad
     cdef public size_t num_internal_cons
     cdef public size_t num_multiphase_cons
@@ -52,5 +53,6 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
     cpdef void mass_obj(self, double[::1] out, double[:, ::1] dof, int comp_idx) nogil
     cpdef void mass_grad(self, double[::1] out, double[::1] dof, int comp_idx) nogil
     cpdef void mass_hess(self, double[:,::1] out, double[::1] dof, int comp_idx) nogil
-    cpdef void parameter_grad(self, double[:,::1] out, double[::1] dof) nogil
+    cpdef void parameter_obj_grad(self, double[::1] out, double[::1] dof, double[::1] parameters) nogil
+    cpdef void parameter_grad(self, double[:,::1] out, double[::1] dof, double[::1] parameters) nogil
 

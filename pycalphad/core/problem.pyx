@@ -442,7 +442,7 @@ cdef class Problem:
         mu_prime = np.dot(jac_pinv, hess) + np.einsum('ijk,j->ik', jac_pinv_prime, grad)
         return mu_prime[-len(self.nonvacant_elements):]
 
-    def chemical_potential_parameter_gradient(self, x_in):
+    def chemical_potential_parameter_gradient(self, x_in, parameters):
         "Assuming the input is a feasible solution."
         cdef CompositionSet compset = self.composition_sets[0]
         cdef int num_parameters = len(compset.phase_record.parameters)
@@ -450,23 +450,25 @@ cdef class Problem:
         cdef double phase_amt = 0
         cdef int num_statevars = len(compset.phase_record.state_variables)
         cdef int var_offset = num_statevars
-        cdef int dof_x_idx
+        cdef int dof_x_idx, spidx
         cdef int idx = 0
         cdef double[::1] x = np.array(x_in)
         cdef double[::1] grad_tmp = np.zeros(self.num_vars * num_parameters)
+        cdef double[::1] obj_grad_tmp = np.zeros(num_parameters)
         cdef double[:, ::1] param_grad_tmp_view
         cdef np.ndarray[ndim=2, dtype=np.float64_t] energy_parameter_prime = np.zeros((self.num_vars, num_parameters))
         cdef np.ndarray[ndim=2, dtype=np.float64_t] mu_parameter_prime, jac, jac_pinv
 
         jac = self.mass_jacobian(x_in).T
         jac_pinv = np.linalg.pinv(jac)
-
         for compset in self.composition_sets:
-            phase_amt = x_in[self.num_vars-self.num_phases+phase_idx]
+            spidx = self.num_vars-self.num_phases+phase_idx
+            phase_amt = x_in[spidx]
             x = np.r_[x_in[:num_statevars], x_in[var_offset:var_offset+compset.phase_record.phase_dof]]
             param_grad_tmp_view = <double[:num_statevars+compset.phase_record.phase_dof,
                                           :num_parameters]>&grad_tmp[0]
-            compset.phase_record.parameter_grad(param_grad_tmp_view, x)
+            compset.phase_record.parameter_grad(param_grad_tmp_view, x, parameters)
+            compset.phase_record.parameter_obj_grad(obj_grad_tmp, x, parameters)
 
             for dof_x_idx in range(num_statevars):
                 for idx in range(num_parameters):
@@ -475,7 +477,10 @@ cdef class Problem:
                 for idx in range(num_parameters):
                     energy_parameter_prime[var_offset + dof_x_idx, idx] = \
                         phase_amt * param_grad_tmp_view[num_statevars+dof_x_idx, idx]
+            for idx in range(num_parameters):
+                energy_parameter_prime[spidx, idx] = obj_grad_tmp[idx]
             grad_tmp[:] = 0
+            obj_grad_tmp[:] = 0
             var_offset += compset.phase_record.phase_dof
             phase_idx += 1
         # Assuming jac_pinv is independent of parameter values

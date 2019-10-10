@@ -85,6 +85,7 @@ def build_callables(dbf, comps, phases, models, parameter_symbols=None,
         'internal_cons_hess': {},
         'mp_cons': {},
         'mp_jac': {},
+        'param_obj_grad_callables': {},
         'param_grad_callables': {}
     }
 
@@ -131,6 +132,9 @@ def build_callables(dbf, comps, phases, models, parameter_symbols=None,
         _callables['massgradfuncs'][name] = mgf
         _callables['masshessfuncs'][name] = mhf
 
+        build_output = build_functions(out, tuple(state_variables + site_fracs), parameters=parameter_symbols,
+                                            wrt=parameter_symbols, include_grad=True, include_hess=False)
+        _callables['param_obj_grad_callables'][name] = build_output.grad
         build_output = build_functions(out, tuple(state_variables + site_fracs), parameters=parameter_symbols,
                                             include_grad=build_gradients, include_hess=False)
         _callables['param_grad_callables'][name] = build_output.param_grad
@@ -228,6 +232,7 @@ def build_phase_records(dbf, comps, phases, conds, models, output='GM',
                                                   callables[output]['massfuncs'][name],
                                                   callables[output]['massgradfuncs'][name],
                                                   callables[output]['masshessfuncs'][name],
+                                                  callables[output]['param_obj_grad_callables'][name],
                                                   callables[output]['param_grad_callables'][name],
                                                   _constraints['internal_cons'][name],
                                                   _constraints['internal_jac'][name],
