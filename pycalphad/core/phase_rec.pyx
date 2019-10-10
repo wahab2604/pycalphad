@@ -251,16 +251,16 @@ cdef public class PhaseRecord(object)[type PhaseRecordType, object PhaseRecordOb
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void parameter_obj_grad(self, double[::1] out, double[::1] dof, double[::1] parameters) nogil:
-        cdef double* dof_concat = alloc_dof_with_parameters(dof, parameters)
+    cpdef void parameter_obj_grad(self, double[::1] out, double[::1] dof) nogil:
+        cdef double* dof_concat = alloc_dof_with_parameters(dof, self.parameters)
         self._param_obj_grad.call(&out[0], &dof_concat[0])
-        if parameters.shape[0] > 0:
+        if self.parameters.shape[0] > 0:
             free(dof_concat)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cpdef void parameter_grad(self, double[:,::1] out, double[::1] dof, double[::1] parameters) nogil:
-        cdef double* dof_concat = alloc_dof_with_parameters(dof, parameters)
+    cpdef void parameter_grad(self, double[:,::1] out, double[::1] dof) nogil:
+        cdef double* dof_concat = alloc_dof_with_parameters(dof, self.parameters)
         self._param_grad.call(&out[0,0], &dof_concat[0])
-        if parameters.shape[0] > 0:
+        if self.parameters.shape[0] > 0:
             free(dof_concat)
