@@ -8,6 +8,7 @@ cdef class Problem:
     cdef public double[::1] fixed_dof_values
     cdef public int[::1] fixed_chempot_indices
     cdef public double[::1] fixed_chempot_values
+    cdef public double[::1] fixed_total_moles
     cdef public object composition_sets
     cdef public object conditions
     cdef public object pure_elements

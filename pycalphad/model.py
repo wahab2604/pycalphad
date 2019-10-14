@@ -426,7 +426,7 @@ class Model(object):
                         constraint = (self._site_ratio_normalization/self.site_ratios[idx]) * (dgdy_other_element - dgdy_reference_element) - \
                                      (v.MU(other_element))
                         diffusion_potential_constraints.append(1e-6 * Symbol('NP') * constraint)
-        return diffusion_potential_constraints
+        return []
 
     def get_multiphase_constraints(self, conds):
         multiphase_constraints = []
@@ -434,7 +434,8 @@ class Model(object):
             if not is_multiphase_constraint(statevar):
                 continue
             if isinstance(statevar, v.Composition):
-                multiphase_constraints.append(Symbol('NP') * self.moles(statevar.species))
+                #multiphase_constraints.append(Symbol('NP') * self.moles(statevar.species))
+                pass
             elif statevar == v.N:
                 multiphase_constraints.append(Symbol('NP') * (sum(self.moles(spec) for spec in self.nonvacant_elements)))
             elif statevar in [v.T, v.P]:
