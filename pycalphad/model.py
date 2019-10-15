@@ -434,12 +434,11 @@ class Model(object):
             if not is_multiphase_constraint(statevar):
                 continue
             if isinstance(statevar, v.Composition):
-                #multiphase_constraints.append(Symbol('NP') * self.moles(statevar.species))
-                pass
+                multiphase_constraints.append(Symbol('NP') * self.moles(statevar.species))
             elif statevar == v.N:
                 multiphase_constraints.append(Symbol('NP') * (sum(self.moles(spec) for spec in self.nonvacant_elements)))
             elif statevar in [v.T, v.P]:
-                return multiphase_constraints.append(S.Zero)
+                multiphase_constraints.append(S.Zero)
             else:
                 raise NotImplementedError
         return multiphase_constraints

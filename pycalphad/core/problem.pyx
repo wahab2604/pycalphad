@@ -109,6 +109,9 @@ cdef class Problem:
         self.fixed_total_moles = np.zeros(len(self.nonvacant_elements))
         for comp_idx in range(len(self.nonvacant_elements)):
             self.fixed_total_moles[comp_idx] = conditions.get('X_' + self.nonvacant_elements[comp_idx], 0)
+        # XXX: This is a hack for testing purposes
+        self.fixed_total_moles[0] = 1 - sum(self.fixed_total_moles[1:])
+        print('fixed_total_moles', np.array(self.fixed_total_moles))
         self.cl = np.zeros(num_constraints)
         self.cu = np.zeros(num_constraints)
         compset = comp_sets[0]
@@ -177,6 +180,7 @@ cdef class Problem:
             for comp_idx in range(moles.shape[0]):
                 total_obj -= chempots[comp_idx] * phase_amt * moles[comp_idx]
             moles[:] = 0
+            var_offset += compset.phase_record.phase_dof
         return total_obj
 
     def gradient(self, x_in):
@@ -247,6 +251,7 @@ cdef class Problem:
                 gradient_term[spidx] -= chempots[comp_idx] * moles[comp_idx]
                 # wrt chemical potentials
                 gradient_term[self.num_vars - len(self.nonvacant_elements) + comp_idx] -= phase_amt * moles[comp_idx]
+            var_offset += compset.phase_record.phase_dof
             moles[:] = 0
             moles_gradient[:,:] = 0
 
@@ -333,13 +338,18 @@ cdef class Problem:
                 compset.phase_record.mass_hess(moles_hessian_view, x, comp_idx)
                 # wrt statevars+phase dof, statevars+phase dof
                 for dof_x_idx in range(num_statevars):
-                    for sv_idx in range(num_statevars):
+                    for sv_idx in range(dof_x_idx, num_statevars):
                         hess[dof_x_idx, sv_idx] -= chempots[comp_idx] * phase_amt * moles_hessian_view[dof_x_idx, sv_idx]
                         if dof_x_idx != sv_idx:
                             hess[sv_idx, dof_x_idx] -= chempots[comp_idx] * phase_amt * moles_hessian_view[sv_idx, dof_x_idx]
                     for iter_idx in range(compset.phase_record.phase_dof):
                         hess[dof_x_idx, var_idx + iter_idx] -= chempots[comp_idx] * phase_amt * moles_hessian_view[dof_x_idx, num_statevars + iter_idx]
                         hess[var_idx + iter_idx, dof_x_idx] -= chempots[comp_idx] * phase_amt * moles_hessian_view[num_statevars + iter_idx, dof_x_idx]
+                for dof_x_idx in range(compset.phase_record.phase_dof):
+                    for iter_idx in range(dof_x_idx, compset.phase_record.phase_dof):
+                        hess[var_idx + dof_x_idx, var_idx + iter_idx] -= chempots[comp_idx] * phase_amt * moles_hessian_view[num_statevars + dof_x_idx, num_statevars + iter_idx]
+                        if dof_x_idx != iter_idx:
+                            hess[var_idx + iter_idx, var_idx + dof_x_idx] -= chempots[comp_idx] * phase_amt * moles_hessian_view[num_statevars + iter_idx, num_statevars + dof_x_idx]
                 # wrt statevars+phase dof, phase amt
                 for sv_idx in range(num_statevars):
                     hess[spidx, sv_idx] -= chempots[comp_idx] * moles_gradient_view[sv_idx]
@@ -514,6 +524,8 @@ cdef class Problem:
         # Fourth: Multiphase constraints
         for phase_idx in range(self.num_phases):
             compset = self.composition_sets[phase_idx]
+            if compset.phase_record.num_multiphase_cons == 0:
+                continue
             spidx = self.num_vars - len(self.nonvacant_elements) - self.num_phases + phase_idx
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
                 x[var_idx:var_idx+compset.phase_record.phase_dof]
@@ -928,6 +940,8 @@ cdef class Problem:
         var_offset = num_statevars
         # Fourth: Multiphase constraints
         for phase_idx in range(self.num_phases):
+            if compset.phase_record.num_multiphase_cons == 0:
+                continue
             compset = self.composition_sets[phase_idx]
             spidx = self.num_vars - len(self.nonvacant_elements) - self.num_phases + phase_idx
             x_tmp[num_statevars:num_statevars+compset.phase_record.phase_dof] = \
