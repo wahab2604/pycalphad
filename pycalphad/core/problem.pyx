@@ -66,9 +66,8 @@ cdef class Problem:
         self.fixed_chempot_indices = np.array([self.nonvacant_elements.index(key[3:]) for key in conditions.keys() if key.startswith('MU_')], dtype=np.int32)
         self.fixed_chempot_values = np.array([float(value) for key, value in conditions.items() if key.startswith('MU_')])
         num_fixed_dof_cons = len(state_variables) + self.fixed_chempot_indices.shape[0]
-        num_gibbs_duhem = len(self.composition_sets)
         num_constraints = num_fixed_dof_cons + num_internal_cons + num_dpot_cons + \
-                          len(get_multiphase_constraint_rhs(conditions)) + num_gibbs_duhem
+                          len(get_multiphase_constraint_rhs(conditions))
         num_chemical_potentials = len(self.nonvacant_elements)
         self.num_phases = len(self.composition_sets)
         self.num_vars = len(state_variables) + sum(compset.phase_record.phase_dof for compset in comp_sets) + self.num_phases + num_chemical_potentials
@@ -92,9 +91,9 @@ cdef class Problem:
         # XXX: Are these large enough bounds for the chemical potential?
         # They need to be bounded somehow, or else they will run off to +- inf
         self.xl = np.r_[np.full(self.num_vars - self.num_phases - num_chemical_potentials, MIN_SITE_FRACTION),
-                        np.full(self.num_phases, MIN_PHASE_FRACTION), np.full(num_chemical_potentials, 0.0)]
+                        np.full(self.num_phases, MIN_PHASE_FRACTION), np.full(num_chemical_potentials, -2e19)]
         self.xu = np.r_[np.ones(self.num_vars - self.num_phases - num_chemical_potentials)*2.e19,
-                        np.ones(self.num_phases)*2e19, np.full(num_chemical_potentials, 2e15)]
+                        np.ones(self.num_phases)*2e19, np.full(num_chemical_potentials, 2e19)]
         self.x0 = np.zeros(self.num_vars)
         for var_idx in range(len(state_variables)):
             self.x0[var_idx] = comp_sets[0].dof[var_idx]
@@ -110,7 +109,7 @@ cdef class Problem:
         for comp_idx in range(len(self.nonvacant_elements)):
             self.fixed_total_moles[comp_idx] = conditions.get('X_' + self.nonvacant_elements[comp_idx], 0)
         # XXX: This is a hack for testing purposes
-        self.fixed_total_moles[0] = 1 - sum(self.fixed_total_moles[1:])
+        self.fixed_total_moles[np.where(np.array(self.fixed_total_moles)==0)[0][0]] = 1 - sum(self.fixed_total_moles)
         print('fixed_total_moles', np.array(self.fixed_total_moles))
         self.cl = np.zeros(num_constraints)
         self.cu = np.zeros(num_constraints)
@@ -122,16 +121,9 @@ cdef class Problem:
         for var_idx in range(num_fixed_dof_cons, num_internal_cons + num_fixed_dof_cons):
             self.cl[var_idx] = 0
             self.cu[var_idx] = 0
-        for var_idx in range(num_fixed_dof_cons + num_internal_cons, num_internal_cons + num_fixed_dof_cons + num_dpot_cons):
-            self.cl[var_idx] = 0
-            self.cu[var_idx] = 0
-        for var_idx in range(num_fixed_dof_cons + num_internal_cons + num_dpot_cons, num_fixed_dof_cons + num_internal_cons + num_dpot_cons + len(multiphase_rhs)):
+        for var_idx in range(num_fixed_dof_cons + num_internal_cons + num_dpot_cons, num_fixed_dof_cons + num_internal_cons + len(multiphase_rhs)):
             self.cl[var_idx] = multiphase_rhs[var_idx-num_internal_cons-num_fixed_dof_cons-num_dpot_cons]
             self.cu[var_idx] = multiphase_rhs[var_idx-num_internal_cons-num_fixed_dof_cons-num_dpot_cons]
-        # Gibbs-Duhem for each phase
-        for var_idx in range(num_fixed_dof_cons + num_internal_cons + num_dpot_cons + len(multiphase_rhs), num_constraints):
-            self.cl[var_idx] = 0
-            self.cu[var_idx] = 0
 
     def objective(self, x_in):
         cdef CompositionSet compset = self.composition_sets[0]
@@ -162,6 +154,7 @@ cdef class Problem:
             phase_idx += 1
             var_offset += compset.phase_record.phase_dof
             tmp = 0
+            energy_2d_view = <double[:1]>&tmp
 
         for comp_idx in range(moles.shape[0]):
                 total_obj += chempots[comp_idx] * self.fixed_total_moles[comp_idx]
@@ -856,7 +849,6 @@ cdef class Problem:
         constraint_offset += compset.phase_record.num_multiphase_cons
 
         # Fifth: Gibbs-Duhem relations
-        #print('l_constraints', np.array(l_constraints))
         return np.array(l_constraints)
 
     def jacobian(self, x_in):

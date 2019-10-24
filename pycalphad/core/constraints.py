@@ -38,6 +38,7 @@ ConstraintTuple = namedtuple('ConstraintTuple', ['internal_cons', 'internal_jac'
 
 def is_multiphase_constraint(cond):
     cond = str(cond)
+    return False
     if cond == 'N' or cond.startswith('X_'):
         return True
     else:

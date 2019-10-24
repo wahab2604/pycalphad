@@ -246,7 +246,7 @@ class Model(object):
                 normalization += self.site_ratios[idx] * \
                     sum(int(spec.number_of_atoms > 0) * v.SiteFraction(self.phase_name, idx, spec)
                         for spec in active)
-        return result / normalization
+        return result #/ normalization
 
     @property
     def ast(self):
