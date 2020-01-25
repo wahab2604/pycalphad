@@ -9,7 +9,7 @@ Thermochimica is software written by M. H. A. Piro and released under the BSD Li
 from pycalphad import Database
 from pycalphad.io.grammar import float_number, chemical_formula
 import pycalphad.variables as v
-from pyparsing import CaselessKeyword, CharsNotIn, Forward, Group, Combine
+from pyparsing import CaselessKeyword, CharsNotIn, Forward, Group, Combine, Empty
 from pyparsing import StringEnd, LineEnd, MatchFirst, OneOrMore, Optional, Regex, SkipTo
 from pyparsing import ZeroOrMore, Suppress, White, Word, alphanums, alphas, nums
 from pyparsing import delimitedList, ParseException
@@ -26,14 +26,24 @@ species_solution_integer_list = Forward()
 header_species_block = Forward()
 
 
-def create_gibbs_equation_block(phase_id, block, toks):
+def create_gibbs_equation_block(phase_id, block, magnetic_terms, toks):
     num_additional_terms = int(toks[str(phase_id)+'_num_additional_terms'])
+    eq_type = int(toks[str(phase_id) + '_gibbs_eq_type'])
     block << Group(Group(7 * float_number) +
                  num_additional_terms * (Group(CaselessKeyword('1') + (2 * float_number) + Optional(Group(7 * float_number))) |
                                          Group(CaselessKeyword('2') + (4 * float_number) + Group(7 * float_number))
                                          )
                  )
-    return [num_additional_terms]
+    if eq_type == 16:
+        if phase_id == 'temp':
+            # stoichiometric phase
+            magnetic_terms << Group(4 * float_number)(str(phase_id)+'magnetic_terms')
+        else:
+            # solution phase
+            magnetic_terms << Group(2 * float_number)(str(phase_id) + 'magnetic_terms')
+    else:
+        magnetic_terms << Empty()
+    return [eq_type, num_additional_terms]
 
 
 def create_solution_phase_blocks(toks):
@@ -43,21 +53,24 @@ def create_solution_phase_blocks(toks):
     for phase_idx in range(num_solution_phases):
         num_species = num_species_in_solution_phase[phase_idx]
         gibbs_equation_block = Forward()
-        species_block = Group(species_name + int_number(str(phase_idx) + '_gibbs_eq_type') +\
-                        int_number(str(phase_idx) + '_num_additional_terms').\
-                            setParseAction(partial(create_gibbs_equation_block, phase_idx, gibbs_equation_block)) +\
-                        (num_elements * float_number) +\
-                        gibbs_equation_block)
+        gibbs_magnetic_terms = Forward()
+        species_block = Group(species_name + (int_number(str(phase_idx) + '_gibbs_eq_type') +\
+                        int_number(str(phase_idx) + '_num_additional_terms')).\
+                            setParseAction(partial(create_gibbs_equation_block, phase_idx,
+                                                   gibbs_equation_block, gibbs_magnetic_terms)) +\
+                        Group(num_elements * float_number) +\
+                        gibbs_equation_block + gibbs_magnetic_terms)
         phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block))
         solution_phases_block << phase_block
     stoi_gibbs_equation_block = Forward()
-    stoi_gibbs_block = Group(int_number('temp_gibbs_eq_type') +\
-                             int_number('temp_num_additional_terms').\
-                             setParseAction(partial(create_gibbs_equation_block, 'temp', stoi_gibbs_equation_block)) +\
-                             (num_elements * float_number) + \
-                             stoi_gibbs_equation_block)
-    stoichiometric_phases_block << ZeroOrMore(Group(stoi_phase_name + Optional('#') + Group(stoi_gibbs_block) +
-                                                    Group(4 * float_number)))
+    stoi_magnetic_terms = Forward()
+    stoi_gibbs_block = Group((int_number('temp_gibbs_eq_type') +\
+                             int_number('temp_num_additional_terms')).\
+                             setParseAction(partial(create_gibbs_equation_block, 'temp',
+                                                    stoi_gibbs_equation_block, stoi_magnetic_terms)) +\
+                             Group(num_elements * float_number) + \
+                             stoi_gibbs_equation_block + stoi_magnetic_terms)
+    stoichiometric_phases_block << ZeroOrMore(Group(stoi_phase_name + Optional('#') + Group(stoi_gibbs_block)))
 
 
 def setup_blocks(toks):
