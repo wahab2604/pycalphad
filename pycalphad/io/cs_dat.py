@@ -9,7 +9,7 @@ Thermochimica is software written by M. H. A. Piro and released under the BSD Li
 from pycalphad import Database
 from pycalphad.io.grammar import float_number, chemical_formula
 import pycalphad.variables as v
-from pyparsing import CaselessKeyword, CharsNotIn, Forward, Group
+from pyparsing import CaselessKeyword, CharsNotIn, Forward, Group, Combine
 from pyparsing import StringEnd, LineEnd, MatchFirst, OneOrMore, Optional, Regex, SkipTo
 from pyparsing import ZeroOrMore, Suppress, White, Word, alphanums, alphas, nums
 from pyparsing import delimitedList, ParseException
@@ -17,7 +17,8 @@ from functools import partial
 
 int_number = Word(nums).setParseAction(lambda t: [int(t[0])])
 species_name = Word(alphanums + '()')
-phase_name = Word(alphanums + '()_')
+phase_name = Word(alphanums + '_')
+stoi_phase_name = Combine(phase_name + '(s)')
 solution_phases_block = Forward()
 stoichiometric_phases_block = Forward()
 species_solution_integer_list = Forward()
@@ -27,14 +28,11 @@ header_species_block = Forward()
 
 def create_gibbs_equation_block(phase_id, block, toks):
     num_additional_terms = int(toks[str(phase_id)+'_num_additional_terms'])
-    if num_additional_terms > 0:
-        block << Group(Group(7 * float_number) +
-                     num_additional_terms * (Group(CaselessKeyword('1') + (2 * float_number) + Optional(Group(7 * float_number))) |
-                                             Group(CaselessKeyword('2') + (4 * float_number) + Group(7 * float_number))
-                                             )
-                     )
-    else:
-        block << Group(Group(7 * float_number))
+    block << Group(Group(7 * float_number) +
+                 num_additional_terms * (Group(CaselessKeyword('1') + (2 * float_number) + Optional(Group(7 * float_number))) |
+                                         Group(CaselessKeyword('2') + (4 * float_number) + Group(7 * float_number))
+                                         )
+                 )
     return [num_additional_terms]
 
 
@@ -52,6 +50,14 @@ def create_solution_phase_blocks(toks):
                         gibbs_equation_block)
         phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block))
         solution_phases_block << phase_block
+    stoi_gibbs_equation_block = Forward()
+    stoi_gibbs_block = Group(int_number('temp_gibbs_eq_type') +\
+                             int_number('temp_num_additional_terms').\
+                             setParseAction(partial(create_gibbs_equation_block, 'temp', stoi_gibbs_equation_block)) +\
+                             (num_elements * float_number) + \
+                             stoi_gibbs_equation_block)
+    stoichiometric_phases_block << ZeroOrMore(Group(stoi_phase_name + Optional('#') + Group(stoi_gibbs_block) +
+                                                    Group(4 * float_number)))
 
 
 def setup_blocks(toks):
@@ -78,7 +84,7 @@ header_preamble.setParseAction(setup_blocks)
 header_gibbs_temperature_terms = Group(7 * int_number) + Group(7 * int_number)
 
 header_block = header_preamble + header_species_block + header_gibbs_temperature_terms
-data_block = solution_phases_block
+data_block = solution_phases_block + stoichiometric_phases_block
 
 cs_dat_grammar = header_block + data_block + SkipTo(StringEnd())
 
