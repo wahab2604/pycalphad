@@ -56,7 +56,7 @@ def create_solution_phase_blocks(toks):
         gibbs_magnetic_terms = Forward()
         species_block = Group(species_name + (int_number(str(phase_idx) + '_gibbs_eq_type') +\
                         int_number(str(phase_idx) + '_num_additional_terms')).\
-                            setParseAction(partial(create_gibbs_equation_block, phase_idx,
+                            addParseAction(partial(create_gibbs_equation_block, phase_idx,
                                                    gibbs_equation_block, gibbs_magnetic_terms)) +\
                         Group(num_elements * float_number) +\
                         gibbs_equation_block + gibbs_magnetic_terms)
@@ -66,7 +66,7 @@ def create_solution_phase_blocks(toks):
     stoi_magnetic_terms = Forward()
     stoi_gibbs_block = Group((int_number('temp_gibbs_eq_type') +\
                              int_number('temp_num_additional_terms')).\
-                             setParseAction(partial(create_gibbs_equation_block, 'temp',
+                             addParseAction(partial(create_gibbs_equation_block, 'temp',
                                                     stoi_gibbs_equation_block, stoi_magnetic_terms)) +\
                              Group(num_elements * float_number) + \
                              stoi_gibbs_equation_block + stoi_magnetic_terms)
@@ -77,9 +77,7 @@ def setup_blocks(toks):
     num_elements = toks['number_elements']
     # Element names, followed by their masses
     header_species_block << (num_elements * species_name) + (num_elements * float_number)
-    header_species_block.setParseAction(lambda t: [dict(zip(t[:num_elements], t[num_elements:]))])
-
-    create_solution_phase_blocks(toks)
+    header_species_block.addParseAction(lambda t: [dict(zip(t[:num_elements], t[num_elements:]))])
 
 
 def set_species_array_size(toks):
@@ -91,7 +89,8 @@ def set_species_array_size(toks):
 header_preamble = CaselessKeyword('System') + Word(alphanums + '-()')('system_name') + \
     int_number('number_elements') + int_number('number_solution_phases').setParseAction(set_species_array_size) + \
     species_solution_integer_list + int_number('number_species_in_system')
-header_preamble.setParseAction(setup_blocks)
+header_preamble.addParseAction(setup_blocks)
+header_preamble.addParseAction(create_solution_phase_blocks)
 
 # TODO: Is this always just "6   1   2   3   4   5   6" twice?
 header_gibbs_temperature_terms = Group(7 * int_number) + Group(7 * int_number)
