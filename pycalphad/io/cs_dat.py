@@ -86,7 +86,7 @@ def set_species_array_size(toks):
     return [toks['number_solution_phases']]
 
 
-header_preamble = CaselessKeyword('System') + Word(alphanums + '-()')('system_name') + \
+header_preamble = Suppress(SkipTo(LineEnd())) + \
     int_number('number_elements') + int_number('number_solution_phases').setParseAction(set_species_array_size) + \
     species_solution_integer_list + int_number('number_species_in_system')
 header_preamble.addParseAction(setup_blocks)
