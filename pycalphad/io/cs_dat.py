@@ -55,7 +55,7 @@ def create_cs_dat_grammar():
             num_coefficients = int(num_coeffs_toks[0][0])
             coefficients << Group(num_coefficients*int_number)
             return num_coeffs_toks
-        return Suppress(int_number(name).setParseAction(setup_coefficients)) + coefficients
+        return Suppress(int_number().setParseAction(setup_coefficients)) + coefficients(name)
 
     def create_gibbs_equation_block(phase_id, block, magnetic_terms, toks):
         num_additional_terms = int(toks[str(phase_id)+'_num_additional_terms'])
@@ -134,10 +134,10 @@ def create_cs_dat_grammar():
     header_preamble.addParseAction(setup_blocks)
     header_preamble.addParseAction(create_solution_phase_blocks)
 
-    # TODO: Is this always just "6   1   2   3   4   5   6" twice?
-    header_gibbs_temperature_terms = Group(coefficients_parse_block('gibbs_coefficient_idxs')) + Group(coefficients_parse_block('excess_coefficient_idxs'))
-
-    header_block = header_preamble + header_species_block + header_gibbs_temperature_terms
+    header_block = header_preamble + \
+                   header_species_block + \
+                   coefficients_parse_block('gibbs_coefficient_idxs') + \
+                   coefficients_parse_block('excess_coefficient_idxs')
     data_block = solution_phases_block + stoichiometric_phases_block
 
     cs_dat_grammar = header_block + data_block + SkipTo(StringEnd())
