@@ -57,7 +57,7 @@ def create_cs_dat_grammar():
             return num_coeffs_toks
         return Suppress(int_number().setParseAction(setup_coefficients)) + coefficients(name)
 
-    def create_gibbs_equation_block(phase_id, block, magnetic_terms, toks):
+    def create_gibbs_equation_block(phase_id, num_gibbs_coeffs, num_excess_coeffs, block, magnetic_terms, toks):
         num_additional_terms = int(toks[str(phase_id)+'_num_additional_terms'])
         eq_type = int(toks[str(phase_id) + '_gibbs_eq_type'])
         if (eq_type % 12) in (4, 5, 6, 10, 11, 12):
@@ -72,10 +72,11 @@ def create_cs_dat_grammar():
                 coeff_exponent_pairs << Group(number_of_pairs*Group(2*float_number))
                 return num_pairs_toks
             additional_terms_block = Suppress(int_number('num_coeff_exp_pairs').setParseAction(set_pairs)) + coeff_exponent_pairs
-
-            block << num_additional_terms * Group(Group(7 * float_number) + additional_terms_block)
+            # parse the Gibbs coefficients plus the temperature upper limit
+            block << num_additional_terms * Group(Group((1 + num_gibbs_coeffs) * float_number) + additional_terms_block)
         else:
-            block << num_additional_terms * Group(Group(7 * float_number))
+            # parse the Gibbs coefficients plus the temperature upper limit
+            block << num_additional_terms * Group(Group((1 + num_gibbs_coeffs) * float_number))
         if eq_type == 16:
             if phase_id == 'temp':
                 # stoichiometric phase
@@ -92,6 +93,8 @@ def create_cs_dat_grammar():
         num_elements = toks['number_elements']
         num_solution_phases = toks['number_solution_phases']
         num_species_in_solution_phase = toks['number_species_in_solution_phase']
+        num_gibbs_coeffs = len(toks['gibbs_coefficient_idxs'])
+        num_excess_coeffs = len(toks['excess_coefficient_idxs'])
         for phase_idx in range(num_solution_phases):
             num_species = num_species_in_solution_phase[phase_idx]
             gibbs_equation_block = Forward()
@@ -99,6 +102,7 @@ def create_cs_dat_grammar():
             species_block = Group(species_name + (int_number(str(phase_idx) + '_gibbs_eq_type') +\
                             int_number(str(phase_idx) + '_num_additional_terms')).\
                                 addParseAction(partial(create_gibbs_equation_block, phase_idx,
+                                                       num_gibbs_coeffs, num_excess_coeffs,
                                                        gibbs_equation_block, gibbs_magnetic_terms)) +\
                             Group(num_elements * float_number) +\
                             gibbs_equation_block + gibbs_magnetic_terms)
@@ -109,6 +113,7 @@ def create_cs_dat_grammar():
         stoi_gibbs_block = Group((int_number('temp_gibbs_eq_type') +\
                                  int_number('temp_num_additional_terms')).\
                                  addParseAction(partial(create_gibbs_equation_block, 'temp',
+                                                        num_gibbs_coeffs, num_excess_coeffs,
                                                         stoi_gibbs_equation_block, stoi_magnetic_terms)) +\
                                  Group(num_elements * float_number) + \
                                  stoi_gibbs_equation_block + stoi_magnetic_terms)
