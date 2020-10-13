@@ -29,11 +29,22 @@ header_species_block = Forward()
 def create_gibbs_equation_block(phase_id, block, magnetic_terms, toks):
     num_additional_terms = int(toks[str(phase_id)+'_num_additional_terms'])
     eq_type = int(toks[str(phase_id) + '_gibbs_eq_type'])
-    block << Group(Group(7 * float_number) +
-                 num_additional_terms * (Group(CaselessKeyword('1') + (2 * float_number) + Optional(Group(7 * float_number))) |
-                                         Group(CaselessKeyword('2') + (4 * float_number) + Group(7 * float_number))
-                                         )
-                 )
+    if (eq_type % 12) in (4, 5, 6, 10, 11, 12):
+        # additional terms after each line where an integer number of (coefficient, exponent) pairs added
+
+        # create the block for the additional (coefficient, exponent) pairs
+        # the number of pairs that are present is indicated by the first integer number in the block
+        coeff_exponent_pairs = Forward()
+        def set_pairs(num_pairs_toks):
+            # gets the first token and extracts the integer value from the ParseResults
+            number_of_pairs = int(num_pairs_toks[0][0])
+            coeff_exponent_pairs << Group(number_of_pairs*Group(2*float_number))
+            return num_pairs_toks
+        additional_terms_block = Suppress(int_number.setParseAction(set_pairs)) + coeff_exponent_pairs
+
+        block << num_additional_terms * Group(Group(7 * float_number) + additional_terms_block)
+    else:
+        block << num_additional_terms * Group(Group(7 * float_number))
     if eq_type == 16:
         if phase_id == 'temp':
             # stoichiometric phase
