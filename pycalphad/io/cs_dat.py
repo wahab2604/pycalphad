@@ -6,6 +6,7 @@ Thermochimica is software written by M. H. A. Piro and released under the BSD Li
 
 """
 
+from copy import deepcopy
 from pycalphad import Database
 from pycalphad.io.grammar import float_number, chemical_formula
 import pycalphad.variables as v
@@ -26,6 +27,28 @@ def create_cs_dat_grammar():
 
     header_species_block = Forward()
 
+    def coefficients_parse_block():
+        """Return a parse for reading a string of the form:
+
+        `N [N-integers]...`
+
+        where the first number describes how many integer coefficients follow. Examples are:
+
+        ```
+        1 1
+        2 1 2
+        3 1 2 3
+        6 1 2 3 4 5 6
+        4 3 4 5 6
+        ```
+        """
+        coefficients = Forward()
+        def setup_coefficients(num_coeffs_toks):
+            # gets the first token and extracts the integer value from the ParseResults
+            num_coefficients = int(num_coeffs_toks[0][0])
+            coefficients << Group(num_coefficients*int_number)
+            return num_coeffs_toks
+        return Suppress(deepcopy(int_number).setParseAction(setup_coefficients)) + coefficients
 
     def create_gibbs_equation_block(phase_id, block, magnetic_terms, toks):
         num_additional_terms = int(toks[str(phase_id)+'_num_additional_terms'])
@@ -41,7 +64,7 @@ def create_cs_dat_grammar():
                 number_of_pairs = int(num_pairs_toks[0][0])
                 coeff_exponent_pairs << Group(number_of_pairs*Group(2*float_number))
                 return num_pairs_toks
-            additional_terms_block = Suppress(int_number.setParseAction(set_pairs)) + coeff_exponent_pairs
+            additional_terms_block = Suppress(deepcopy(int_number).setParseAction(set_pairs)) + coeff_exponent_pairs
 
             block << num_additional_terms * Group(Group(7 * float_number) + additional_terms_block)
         else:
@@ -105,7 +128,7 @@ def create_cs_dat_grammar():
     header_preamble.addParseAction(create_solution_phase_blocks)
 
     # TODO: Is this always just "6   1   2   3   4   5   6" twice?
-    header_gibbs_temperature_terms = Group(7 * int_number) + Group(7 * int_number)
+    header_gibbs_temperature_terms = Group(coefficients_parse_block()) + Group(coefficients_parse_block())
 
     header_block = header_preamble + header_species_block + header_gibbs_temperature_terms
     data_block = solution_phases_block + stoichiometric_phases_block
