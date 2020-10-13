@@ -132,12 +132,12 @@ def create_cs_dat_grammar():
         int_number('number_elements') + int_number('number_solution_phases').setParseAction(set_species_array_size) + \
         species_solution_integer_list + int_number('number_species_in_system')
     header_preamble.addParseAction(setup_blocks)
-    header_preamble.addParseAction(create_solution_phase_blocks)
 
     header_block = header_preamble + \
                    header_species_block + \
                    coefficients_parse_block('gibbs_coefficient_idxs') + \
                    coefficients_parse_block('excess_coefficient_idxs')
+    header_block.addParseAction(create_solution_phase_blocks)
     data_block = solution_phases_block + stoichiometric_phases_block
 
     cs_dat_grammar = header_block + data_block + SkipTo(StringEnd())
