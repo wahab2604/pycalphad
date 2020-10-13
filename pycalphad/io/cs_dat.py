@@ -115,11 +115,16 @@ def read_cs_dat(dbf, fd):
     lines = fd.read()
     try:
         result = cs_dat_grammar.parseString(lines)
-        result.pprint()
+        # result.pprint()
+        print('pass ', end='')
     except ParseException as e:
-        print(e.line)
-        print(' ' * (e.col - 1) + '^')
-        print(e)
+        # raise e
+        print('fail ', end='')
+        # print(e.line)
+        # print(' ' * (e.col - 1) + '^')
+        # print(e)
+    except Exception as e:
+        print('fail ', end='')
 
 
 def old_read_cs_dat(dbf, fd):
