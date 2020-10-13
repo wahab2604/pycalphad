@@ -4,9 +4,16 @@ Support for reading ChemSage DAT files.
 This implementation is based on a careful reading of Thermochimica source code (with some trial-and-error).
 Thermochimica is software written by M. H. A. Piro and released under the BSD License.
 
+Careful of a gotcha:  `obj.setParseAction` modifies the object in place but calling it a name makes a new object:
+
+`obj = Word(nums); obj is obj.setParseAction(lambda t: t)` is True
+`obj = Word(nums); obj is obj('abc').setParseAction(lambda t: t)` is False
+
+
+
 """
 
-from copy import deepcopy
+
 from pycalphad import Database
 from pycalphad.io.grammar import float_number, chemical_formula
 import pycalphad.variables as v
@@ -27,7 +34,7 @@ def create_cs_dat_grammar():
 
     header_species_block = Forward()
 
-    def coefficients_parse_block():
+    def coefficients_parse_block(name):
         """Return a parse for reading a string of the form:
 
         `N [N-integers]...`
@@ -48,7 +55,7 @@ def create_cs_dat_grammar():
             num_coefficients = int(num_coeffs_toks[0][0])
             coefficients << Group(num_coefficients*int_number)
             return num_coeffs_toks
-        return Suppress(deepcopy(int_number).setParseAction(setup_coefficients)) + coefficients
+        return Suppress(int_number(name).setParseAction(setup_coefficients)) + coefficients
 
     def create_gibbs_equation_block(phase_id, block, magnetic_terms, toks):
         num_additional_terms = int(toks[str(phase_id)+'_num_additional_terms'])
@@ -64,7 +71,7 @@ def create_cs_dat_grammar():
                 number_of_pairs = int(num_pairs_toks[0][0])
                 coeff_exponent_pairs << Group(number_of_pairs*Group(2*float_number))
                 return num_pairs_toks
-            additional_terms_block = Suppress(deepcopy(int_number).setParseAction(set_pairs)) + coeff_exponent_pairs
+            additional_terms_block = Suppress(int_number('num_coeff_exp_pairs').setParseAction(set_pairs)) + coeff_exponent_pairs
 
             block << num_additional_terms * Group(Group(7 * float_number) + additional_terms_block)
         else:
@@ -128,7 +135,7 @@ def create_cs_dat_grammar():
     header_preamble.addParseAction(create_solution_phase_blocks)
 
     # TODO: Is this always just "6   1   2   3   4   5   6" twice?
-    header_gibbs_temperature_terms = Group(coefficients_parse_block()) + Group(coefficients_parse_block())
+    header_gibbs_temperature_terms = Group(coefficients_parse_block('gibbs_coefficient_idxs')) + Group(coefficients_parse_block('excess_coefficient_idxs'))
 
     header_block = header_preamble + header_species_block + header_gibbs_temperature_terms
     data_block = solution_phases_block + stoichiometric_phases_block
