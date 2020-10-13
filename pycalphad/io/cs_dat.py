@@ -96,6 +96,10 @@ def create_cs_dat_grammar():
         num_elements = toks['number_elements']
         num_solution_phases = toks['number_solution_phases']
         num_species_in_solution_phase = toks['number_species_in_solution_phase']
+        if num_species_in_solution_phase[0] == 0:
+            # gas phase is not included and the zero is a placeholder.
+            num_solution_phases = num_solution_phases - 1
+            num_species_in_solution_phase = num_species_in_solution_phase[1:]
         num_gibbs_coeffs = len(toks['gibbs_coefficient_idxs'])
         num_excess_coeffs = len(toks['excess_coefficient_idxs'])
         for phase_idx in range(num_solution_phases):
