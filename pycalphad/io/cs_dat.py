@@ -60,6 +60,9 @@ def create_cs_dat_grammar():
     def create_gibbs_equation_block(phase_id, num_gibbs_coeffs, num_excess_coeffs, block, magnetic_terms, toks):
         num_additional_terms = int(toks[str(phase_id)+'_num_additional_terms'])
         eq_type = int(toks[str(phase_id) + '_gibbs_eq_type'])
+        if eq_type not in (1, 4, 13, 16):
+            raise ValueError(f"Only Gibbs energy equation types of 1, 4, 13 or 16 are supported. Found {eq_type} for phase id {phase_id}")
+
         if (eq_type % 12) in (4, 5, 6, 10, 11, 12):
             # additional terms after each line where an integer number of (coefficient, exponent) pairs added
 
