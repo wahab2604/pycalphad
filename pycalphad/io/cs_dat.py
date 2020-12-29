@@ -208,7 +208,7 @@ def create_cs_dat_grammar():
                    coefficients_parse_block('gibbs_coefficient_idxs') + \
                    coefficients_parse_block('excess_coefficient_idxs')
     header_block.addParseAction(create_solution_phase_blocks)
-    data_block = solution_phases_block + stoichiometric_phases_block
+    data_block = Group(solution_phases_block) + Group(stoichiometric_phases_block)
 
     cs_dat_grammar = header_block + data_block + SkipTo(StringEnd())
     return cs_dat_grammar
