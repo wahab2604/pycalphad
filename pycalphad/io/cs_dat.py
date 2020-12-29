@@ -34,6 +34,64 @@ def create_cs_dat_grammar():
 
     header_species_block = Forward()
 
+    def create_excess_block(num_excess_coeffs):
+        """
+        Create a block to parse interaction parameters
+
+        Parses the following:
+        ```
+         2
+         1   2   3
+        30965.780     -27.614000     0.00000000     0.00000000
+        11865.820      8.2801000     0.00000000     0.00000000
+        20145.960     0.00000000     0.00000000     0.00000000
+         2
+         1   3   2
+        -38417.500     0.00000000     0.46870000E-01 -.19131800E-04
+        -1472.7700     0.00000000     -.31652000E-02 0.25690000E-05
+        0
+        ```
+
+        which can be accessed via
+        ```
+        out = pg.parseString(excess_params_str)
+        print(out['excess_terms'][0]['interacting_species_ids'])
+        print(out['excess_terms'][0]['num_interaction_parameters'])
+        print(out['excess_terms'][0]['interaction_parameters'])
+        ```
+
+        ```
+        [1, 2]
+        3
+        [[30965.78, -27.614, 0.0, 0.0], [11865.82, 8.2801, 0.0, 0.0], [20145.96, 0.0, 0.0, 0.0]]
+
+        The number of cofficients in each excess parameter is determined by the header and must be passed in here.
+        ```
+        """
+        interacting_species_ids = Forward()
+        interaction_parameters = Forward()
+
+        def create_interacting_species_ids(toks):
+            num_interacting_species = int(toks['num_interacting_species'])
+            if num_interacting_species != 0:
+                # need to special case, because 0 is the terminator
+                interacting_species_ids << Group(num_interacting_species*int_number)('interacting_species_ids')
+            return toks
+
+        def create_interaction_parameters(toks):
+            interaction_parameter_coefficients = Group(num_excess_coeffs*float_number)
+            num_interaction_parameters = int(toks['num_interaction_parameters'])
+            interaction_parameters << Group(num_interaction_parameters*interaction_parameter_coefficients)('interaction_parameters')
+            return toks
+
+        num_interacting_species = int_number('num_interacting_species').setParseAction(create_interacting_species_ids)
+        num_interaction_parameters = int_number('num_interaction_parameters').setParseAction(create_interaction_parameters)
+
+        excess_term = num_interacting_species + \
+                      interacting_species_ids + num_interaction_parameters + \
+                      interaction_parameters
+        return OneOrMore(Suppress('0') | Group(excess_term))('excess_terms')
+
     def coefficients_parse_block(name):
         """Return a parse for reading a string of the form:
 
@@ -113,7 +171,7 @@ def create_cs_dat_grammar():
                                                        gibbs_equation_block, gibbs_magnetic_terms)) +\
                             Group(num_elements * float_number) +\
                             gibbs_equation_block + gibbs_magnetic_terms)
-            phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block))
+            phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block)) + Optional(create_excess_block(num_excess_coeffs))
             solution_phases_block << phase_block
         stoi_gibbs_equation_block = Forward()
         stoi_magnetic_terms = Forward()
