@@ -171,8 +171,8 @@ def create_cs_dat_grammar():
                                                        gibbs_equation_block, gibbs_magnetic_terms)) +\
                             Group(num_elements * float_number) +\
                             gibbs_equation_block + gibbs_magnetic_terms)
-            phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block) + Optional(create_excess_block(num_excess_coeffs)))
-            solution_phases_block << ZeroOrMore(phase_block)
+            soln_phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block) + Optional(create_excess_block(num_excess_coeffs)))
+            solution_phases_block << ZeroOrMore(soln_phase_block)
         stoi_gibbs_equation_block = Forward()
         stoi_magnetic_terms = Forward()
         stoi_gibbs_block = Group((int_number('temp_gibbs_eq_type') +\
@@ -208,7 +208,7 @@ def create_cs_dat_grammar():
                    coefficients_parse_block('gibbs_coefficient_idxs') + \
                    coefficients_parse_block('excess_coefficient_idxs')
     header_block.addParseAction(create_solution_phase_blocks)
-    data_block = Group(solution_phases_block) + Group(stoichiometric_phases_block)
+    data_block = Group(solution_phases_block)('solution_phases') + Group(stoichiometric_phases_block)('stoichiometric_phases')
 
     cs_dat_grammar = header_block + data_block + SkipTo(StringEnd())
     return cs_dat_grammar
