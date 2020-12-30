@@ -209,6 +209,36 @@ class ChemsageGrammar():
         species_block = Group(species_header + gibbs_equation_block + gibbs_magnetic_terms)
         return species_block
 
+    def _SUBQ_species_reference_energy_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements):
+        """Returns a grammar that parses the reference energy for a single species"""
+        phase_idx_str = str(phase_idx)
+
+        # Define the header, i.e.
+        # CuCl
+        #   1  1    0.0    0.0    1.0    0.0    1.0    0.0    0.0    0.0
+        phase_gibbs_eq_type = int_number(phase_idx_str + '_gibbs_eq_type')
+        phase_num_addit_terms = int_number(phase_idx_str + '_num_additional_terms')
+        pair_stoichiometry = Group(num_elements * float_number)('pair_stoichiometry')
+        species_header = species_name('species_name') + phase_gibbs_eq_type + phase_num_addit_terms + pair_stoichiometry
+
+        # We use the header to set up the Gibbs energy blocks via the forwarded definitions, i.e. the terms like
+        #  1000.0000     -5219.3324     -12.179856     -26.924057     -.84893408E-02
+        # 0.11276942E-05 -114664.63
+        # 1 -316.64663       0.50
+        gibbs_equation_block = Forward()
+        gibbs_magnetic_terms = Forward()
+        gibbs_eq_block_func = ChemsageGrammar.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)
+        species_header.addParseAction(gibbs_eq_block_func)
+
+        # SUBQ has an extra term for the stoichiometry of the pair in terms of the constituents of the pair
+        # they seem to always come in groups of 5
+        pair_constituent_stoichiometry = Group(5*float_number)('pair_constituent_stoichiometry')
+        coordination_number = float_number('coordination_number')
+
+        # Finally, we construct the entire block
+        species_block = Group(species_header + gibbs_equation_block + gibbs_magnetic_terms + pair_constituent_stoichiometry + coordination_number)
+        return species_block
+
     @staticmethod
     def _solution_phase_block(num_species_in_phase: int, num_excess_coeffs: int,
                               # species block only
@@ -216,6 +246,15 @@ class ChemsageGrammar():
                               ):
         header = ChemsageGrammar._solution_phase_header_block()
         species_block = ChemsageGrammar._species_reference_energy_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements)
+        return Group(header + Group(num_species_in_phase * species_block) + Optional(ChemsageGrammar._excess_block(num_excess_coeffs)))
+
+    @staticmethod
+    def _SUBQ_solution_phase_block(num_species_in_phase: int, num_excess_coeffs: int,
+                                   # species block only
+                                   phase_idx: int, num_gibbs_coeffs: int, num_elements: int,
+                                   ):
+        header = ChemsageGrammar._solution_phase_header_block()
+        species_block = ChemsageGrammar._SUBQ_species_reference_energy_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements)
         return Group(header + Group(num_species_in_phase * species_block) + Optional(ChemsageGrammar._excess_block(num_excess_coeffs)))
 
     def __create_solution_phase_blocks(self, toks):
@@ -232,7 +271,8 @@ class ChemsageGrammar():
         for phase_idx in range(num_solution_phases):
             num_species = num_species_in_solution_phase[phase_idx]
             soln_phase_block = self._solution_phase_block(num_species, num_excess_coeffs, phase_idx, num_gibbs_coeffs, num_elements)
-            soln_phase_blocks.append(soln_phase_block)
+            SUBQ_soln_phase_block = self._SUBQ_solution_phase_block(num_species, num_excess_coeffs, phase_idx, num_gibbs_coeffs, num_elements)
+            soln_phase_blocks.append(Optional(soln_phase_block | SUBQ_soln_phase_block))
         soln_phase_expr = Empty()
         for soln_phase_block in soln_phase_blocks:
             soln_phase_expr = soln_phase_expr + soln_phase_block
