@@ -189,7 +189,10 @@ class ChemsageGrammar():
             gibbs_equation_block = Forward()
             gibbs_magnetic_terms = Forward()
             species_block = Group(species_name + (int_number(str(phase_idx) + '_gibbs_eq_type') + int_number(str(phase_idx) + '_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)) + Group(num_elements * float_number) + gibbs_equation_block + gibbs_magnetic_terms)
-            soln_phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block) + Optional(self._excess_block(num_excess_coeffs)))
+            SUBG_data = float_number('FFN_SNN_ratio') + int_number('num_pairs') + int_number('num_non_default_quadruplets')
+            SUBQ_data = int_number('num_pairs') + int_number('num_non_default_quadruplets')
+            phase_header = phase_name + Word(alphanums)('model_name') + Optional(SUBG_data | SUBQ_data)
+            soln_phase_block = Group(phase_header + Group(num_species * species_block) + Optional(self._excess_block(num_excess_coeffs)))
             soln_phase_blocks.append(soln_phase_block)
         soln_phase_expr = Empty()
         for soln_phase_block in soln_phase_blocks:
