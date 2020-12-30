@@ -183,13 +183,18 @@ class ChemsageGrammar():
             num_species_in_solution_phase = num_species_in_solution_phase[1:]
         num_gibbs_coeffs = len(toks['gibbs_coefficient_idxs'])
         num_excess_coeffs = len(toks['excess_coefficient_idxs'])
+        soln_phase_blocks = []
         for phase_idx in range(num_solution_phases):
             num_species = num_species_in_solution_phase[phase_idx]
             gibbs_equation_block = Forward()
             gibbs_magnetic_terms = Forward()
             species_block = Group(species_name + (int_number(str(phase_idx) + '_gibbs_eq_type') + int_number(str(phase_idx) + '_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)) + Group(num_elements * float_number) + gibbs_equation_block + gibbs_magnetic_terms)
             soln_phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block) + Optional(self._excess_block(num_excess_coeffs)))
-            self.fwd_solution_phases_block << ZeroOrMore(soln_phase_block)
+            soln_phase_blocks.append(soln_phase_block)
+        soln_phase_expr = Empty()
+        for soln_phase_block in soln_phase_blocks:
+            soln_phase_expr = soln_phase_expr + soln_phase_block
+        self.fwd_solution_phases_block << soln_phase_expr
         stoi_gibbs_equation_block = Forward()
         stoi_magnetic_terms = Forward()
         stoi_gibbs_block = Group((int_number('temp_gibbs_eq_type') + int_number('temp_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block('temp', num_gibbs_coeffs, num_excess_coeffs, stoi_gibbs_equation_block, stoi_magnetic_terms)) + Group(num_elements * float_number) + stoi_gibbs_equation_block + stoi_magnetic_terms)
