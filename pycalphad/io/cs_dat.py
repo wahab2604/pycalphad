@@ -177,28 +177,27 @@ class ChemsageGrammar():
             return [eq_type, num_additional_terms]
         return f
 
-    def __create_solution_phase_blocks(self):
-        def f(toks):
-            num_elements = toks['number_elements']
-            num_solution_phases = toks['number_solution_phases']
-            num_species_in_solution_phase = toks['number_species_in_solution_phase']
-            if num_species_in_solution_phase[0] == 0:
-                # gas phase is not included and the zero is a placeholder.
-                num_solution_phases = num_solution_phases - 1
-                num_species_in_solution_phase = num_species_in_solution_phase[1:]
-            num_gibbs_coeffs = len(toks['gibbs_coefficient_idxs'])
-            num_excess_coeffs = len(toks['excess_coefficient_idxs'])
-            for phase_idx in range(num_solution_phases):
-                num_species = num_species_in_solution_phase[phase_idx]
-                gibbs_equation_block = Forward()
-                gibbs_magnetic_terms = Forward()
-                species_block = Group(species_name + (int_number(str(phase_idx) + '_gibbs_eq_type') + int_number(str(phase_idx) + '_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)) + Group(num_elements * float_number) + gibbs_equation_block + gibbs_magnetic_terms)
-                soln_phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block) + Optional(self._excess_block(num_excess_coeffs)))
-                self.fwd_solution_phases_block << ZeroOrMore(soln_phase_block)
-            stoi_gibbs_equation_block = Forward()
-            stoi_magnetic_terms = Forward()
-            stoi_gibbs_block = Group((int_number('temp_gibbs_eq_type') + int_number('temp_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)) + Group(num_elements * float_number) + stoi_gibbs_equation_block + stoi_magnetic_terms)
-            self.fwd_stoichiometric_phases_block << ZeroOrMore(Group(stoi_phase_name + Optional('#') + Group(stoi_gibbs_block)))
+    def __create_solution_phase_blocks(self, toks):
+        num_elements = toks['number_elements']
+        num_solution_phases = toks['number_solution_phases']
+        num_species_in_solution_phase = toks['number_species_in_solution_phase']
+        if num_species_in_solution_phase[0] == 0:
+            # gas phase is not included and the zero is a placeholder.
+            num_solution_phases = num_solution_phases - 1
+            num_species_in_solution_phase = num_species_in_solution_phase[1:]
+        num_gibbs_coeffs = len(toks['gibbs_coefficient_idxs'])
+        num_excess_coeffs = len(toks['excess_coefficient_idxs'])
+        for phase_idx in range(num_solution_phases):
+            num_species = num_species_in_solution_phase[phase_idx]
+            gibbs_equation_block = Forward()
+            gibbs_magnetic_terms = Forward()
+            species_block = Group(species_name + (int_number(str(phase_idx) + '_gibbs_eq_type') + int_number(str(phase_idx) + '_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)) + Group(num_elements * float_number) + gibbs_equation_block + gibbs_magnetic_terms)
+            soln_phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block) + Optional(self._excess_block(num_excess_coeffs)))
+            self.fwd_solution_phases_block << ZeroOrMore(soln_phase_block)
+        stoi_gibbs_equation_block = Forward()
+        stoi_magnetic_terms = Forward()
+        stoi_gibbs_block = Group((int_number('temp_gibbs_eq_type') + int_number('temp_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)) + Group(num_elements * float_number) + stoi_gibbs_equation_block + stoi_magnetic_terms)
+        self.fwd_stoichiometric_phases_block << ZeroOrMore(Group(stoi_phase_name + Optional('#') + Group(stoi_gibbs_block)))
 
     def _header_block(self):
         comment_line = Suppress(SkipTo(LineEnd()))
@@ -212,7 +211,7 @@ class ChemsageGrammar():
             self.fwd_header_species_block + \
             self._coefficients_parse_block('gibbs_coefficient_idxs') + \
             self._coefficients_parse_block('excess_coefficient_idxs')
-        header_block.addParseAction(self.__create_solution_phase_blocks())
+        header_block.addParseAction(self.__create_solution_phase_blocks)
         return header_block
 
     def _phases_block(self):
