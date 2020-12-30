@@ -171,8 +171,8 @@ def create_cs_dat_grammar():
                                                        gibbs_equation_block, gibbs_magnetic_terms)) +\
                             Group(num_elements * float_number) +\
                             gibbs_equation_block + gibbs_magnetic_terms)
-            phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block)) + Optional(create_excess_block(num_excess_coeffs))
-            solution_phases_block << phase_block
+            phase_block = Group(phase_name + Word(alphanums) + Group(num_species * species_block) + Optional(create_excess_block(num_excess_coeffs)))
+            solution_phases_block << ZeroOrMore(phase_block)
         stoi_gibbs_equation_block = Forward()
         stoi_magnetic_terms = Forward()
         stoi_gibbs_block = Group((int_number('temp_gibbs_eq_type') +\
