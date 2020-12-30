@@ -23,11 +23,16 @@ from pyparsing import ZeroOrMore, Suppress, White, Word, alphanums, alphas, nums
 from pyparsing import delimitedList, ParseException
 from functools import partial
 
+
+
+
+
+
 def create_cs_dat_grammar():
     int_number = Word(nums).setParseAction(lambda t: [int(t[0])])
     species_name = Word(alphanums + '()')
     phase_name = Word(alphanums + '_')
-    stoi_phase_name = Combine(phase_name + '(s)')
+    stoi_phase_name = Word(alphanums + '_()')
     solution_phases_block = Forward()
     stoichiometric_phases_block = Forward()
     species_solution_integer_list = Forward()
