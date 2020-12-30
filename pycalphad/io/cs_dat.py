@@ -78,7 +78,8 @@ class ChemsageGrammar():
             return num_coeffs_toks
         return Suppress(int_number().setParseAction(setup_coefficients)) + fwd_coefficients(name)
 
-    def _excess_block(self, num_excess_coeffs):
+    @staticmethod
+    def _excess_block(num_excess_coeffs):
         """
         Create a block to parse interaction parameters
 
@@ -194,7 +195,7 @@ class ChemsageGrammar():
                               ):
         header = ChemsageGrammar._solution_phase_header_block()
         species_block = self._species_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements)
-        return Group(header + Group(num_species_in_phase * species_block) + Optional(self._excess_block(num_excess_coeffs)))
+        return Group(header + Group(num_species_in_phase * species_block) + Optional(ChemsageGrammar._excess_block(num_excess_coeffs)))
 
     def __create_solution_phase_blocks(self, toks):
         num_elements = toks['number_elements']
