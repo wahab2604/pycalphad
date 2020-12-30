@@ -173,6 +173,29 @@ class ChemsageGrammar():
             return [eq_type, num_additional_terms]
         return f
 
+    @staticmethod
+    def _solution_phase_header_block():
+        # Special cases for different models
+        SUBG_data = float_number('FFN_SNN_ratio') + int_number('num_pairs') + int_number('num_non_default_quadruplets')
+        SUBQ_data = int_number('num_pairs') + int_number('num_non_default_quadruplets')
+        phase_header = phase_name + Word(alphanums)('model_name') + Optional(SUBG_data | SUBQ_data)
+        return phase_header
+
+    # TODO: can we @staticmethod (needs __create_gibbs_equation_block to be static)
+    def _species_block(self, phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements):
+        gibbs_equation_block = Forward()
+        gibbs_magnetic_terms = Forward()
+        species_block = Group(species_name + (int_number(str(phase_idx) + '_gibbs_eq_type') + int_number(str(phase_idx) + '_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)) + Group(num_elements * float_number) + gibbs_equation_block + gibbs_magnetic_terms)
+        return species_block
+
+    def _solution_phase_block(self, num_species_in_phase: int, num_excess_coeffs: int,
+                              # species block only
+                              phase_idx: int, num_gibbs_coeffs: int, num_elements: int,
+                              ):
+        header = ChemsageGrammar._solution_phase_header_block()
+        species_block = self._species_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements)
+        return Group(header + Group(num_species_in_phase * species_block) + Optional(self._excess_block(num_excess_coeffs)))
+
     def __create_solution_phase_blocks(self, toks):
         num_elements = toks['number_elements']
         num_solution_phases = toks['number_solution_phases']
@@ -186,13 +209,7 @@ class ChemsageGrammar():
         soln_phase_blocks = []
         for phase_idx in range(num_solution_phases):
             num_species = num_species_in_solution_phase[phase_idx]
-            gibbs_equation_block = Forward()
-            gibbs_magnetic_terms = Forward()
-            species_block = Group(species_name + (int_number(str(phase_idx) + '_gibbs_eq_type') + int_number(str(phase_idx) + '_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)) + Group(num_elements * float_number) + gibbs_equation_block + gibbs_magnetic_terms)
-            SUBG_data = float_number('FFN_SNN_ratio') + int_number('num_pairs') + int_number('num_non_default_quadruplets')
-            SUBQ_data = int_number('num_pairs') + int_number('num_non_default_quadruplets')
-            phase_header = phase_name + Word(alphanums)('model_name') + Optional(SUBG_data | SUBQ_data)
-            soln_phase_block = Group(phase_header + Group(num_species * species_block) + Optional(self._excess_block(num_excess_coeffs)))
+            soln_phase_block = self._solution_phase_block(num_species, num_excess_coeffs, phase_idx, num_gibbs_coeffs, num_elements)
             soln_phase_blocks.append(soln_phase_block)
         soln_phase_expr = Empty()
         for soln_phase_block in soln_phase_blocks:
