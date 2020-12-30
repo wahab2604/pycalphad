@@ -43,20 +43,16 @@ class ChemsageGrammar():
         self.fwd_species_solution_integer_list = Forward()
         self.fwd_header_species_block = Forward()
 
-    def __setup_blocks(self):
-        def f(toks):
-            num_elements = toks['number_elements']
-            # Element names, followed by their masses
-            self.fwd_header_species_block << (num_elements * species_name) + (num_elements * float_number)
-            self.fwd_header_species_block.addParseAction(lambda t: [dict(zip(t[:num_elements], t[num_elements:]))])
-        return f
+    def __setup_blocks(self, toks):
+        num_elements = toks['number_elements']
+        # Element names, followed by their masses
+        self.fwd_header_species_block << (num_elements * species_name) + (num_elements * float_number)
+        self.fwd_header_species_block.addParseAction(lambda t: [dict(zip(t[:num_elements], t[num_elements:]))])
 
-    def __set_species_array_size(self):
-        def f(toks):
-            toks['number_solution_phases'] = int(toks['number_solution_phases'])
-            self.fwd_species_solution_integer_list << Group(toks['number_solution_phases'] * int_number)('number_species_in_solution_phase')
-            return [toks['number_solution_phases']]
-        return f
+    def __set_species_array_size(self, toks):
+        toks['number_solution_phases'] = int(toks['number_solution_phases'])
+        self.fwd_species_solution_integer_list << Group(toks['number_solution_phases'] * int_number)('number_species_in_solution_phase')
+        return [toks['number_solution_phases']]
 
     def _coefficients_parse_block(self, name):
         """Return a parse for reading a string of the form:
@@ -140,7 +136,7 @@ class ChemsageGrammar():
             interaction_parameters
         return OneOrMore(Suppress('0') | Group(excess_term))('excess_terms')
 
-    def __create_gibbs_equation_block(phase_id, num_gibbs_coeffs, num_excess_coeffs, block, magnetic_terms):
+    def __create_gibbs_equation_block(self, phase_id, num_gibbs_coeffs, num_excess_coeffs, block, magnetic_terms):
         def f(toks):
             num_additional_terms = int(toks[str(phase_id)+'_num_additional_terms'])
             eq_type = int(toks[str(phase_id) + '_gibbs_eq_type'])
@@ -202,7 +198,7 @@ class ChemsageGrammar():
     def _header_block(self):
         comment_line = Suppress(SkipTo(LineEnd()))
         num_elements = int_number('number_elements')
-        number_solution_phases = int_number('number_solution_phases').setParseAction(self.__set_species_array_size())
+        number_solution_phases = int_number('number_solution_phases').setParseAction(self.__set_species_array_size)
         number_species_in_system = int_number('number_species_in_system')
         header_preamble = comment_line + num_elements + number_solution_phases + self.fwd_species_solution_integer_list + number_species_in_system
         header_preamble.addParseAction(self.__setup_blocks)
