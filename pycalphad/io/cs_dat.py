@@ -192,7 +192,7 @@ class ChemsageGrammar():
             self.fwd_solution_phases_block << ZeroOrMore(soln_phase_block)
         stoi_gibbs_equation_block = Forward()
         stoi_magnetic_terms = Forward()
-        stoi_gibbs_block = Group((int_number('temp_gibbs_eq_type') + int_number('temp_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)) + Group(num_elements * float_number) + stoi_gibbs_equation_block + stoi_magnetic_terms)
+        stoi_gibbs_block = Group((int_number('temp_gibbs_eq_type') + int_number('temp_num_additional_terms')).addParseAction(self.__create_gibbs_equation_block('temp', num_gibbs_coeffs, num_excess_coeffs, stoi_gibbs_equation_block, stoi_magnetic_terms)) + Group(num_elements * float_number) + stoi_gibbs_equation_block + stoi_magnetic_terms)
         self.fwd_stoichiometric_phases_block << ZeroOrMore(Group(stoi_phase_name + Optional('#') + Group(stoi_gibbs_block)))
 
     def _header_block(self):
