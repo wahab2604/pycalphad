@@ -184,18 +184,28 @@ class ChemsageGrammar():
         return phase_header
 
     @staticmethod
-    def _species_header_block(phase_idx, num_elements):
-        phase_gibbs_eq_type = str(phase_idx) + '_gibbs_eq_type'
-        phase_num_addit_terms = str(phase_idx) + '_num_additional_terms'
-        species_header = species_name + int_number(phase_gibbs_eq_type) + int_number(phase_num_addit_terms) + Group(num_elements * float_number)('pure_element_ratios')
-        return species_header
-
-    @staticmethod
     def _species_reference_energy_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements):
+        """Returns a grammar that parses the reference energy for a single species"""
+        phase_idx_str = str(phase_idx)
+
+        # Define the header, i.e.
+        # CuCl
+        #   1  1    0.0    0.0    1.0    0.0    1.0    0.0    0.0    0.0
+        phase_gibbs_eq_type = int_number(phase_idx_str + '_gibbs_eq_type')
+        phase_num_addit_terms = int_number(phase_idx_str + '_num_additional_terms')
+        pair_stoichiometry = Group(num_elements * float_number)('pair_stoichiometry')
+        species_header = species_name + phase_gibbs_eq_type + phase_num_addit_terms + pair_stoichiometry
+
+        # We use the header to set up the Gibbs energy blocks via the forwarded definitions, i.e. the terms like
+        #  1000.0000     -5219.3324     -12.179856     -26.924057     -.84893408E-02
+        # 0.11276942E-05 -114664.63
+        # 1 -316.64663       0.50
         gibbs_equation_block = Forward()
         gibbs_magnetic_terms = Forward()
         gibbs_eq_block_func = ChemsageGrammar.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)
-        species_header = ChemsageGrammar._species_header_block(phase_idx, num_elements).addParseAction(gibbs_eq_block_func)
+        species_header.addParseAction(gibbs_eq_block_func)
+
+        # Finally, we construct the entire block
         species_block = Group(species_header + gibbs_equation_block + gibbs_magnetic_terms)
         return species_block
 
