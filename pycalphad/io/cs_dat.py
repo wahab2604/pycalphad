@@ -184,10 +184,19 @@ class ChemsageGrammar():
         return phase_header
 
     @staticmethod
-    def _species_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements):
+    def _species_header_block(phase_idx, num_elements):
+        phase_gibbs_eq_type = str(phase_idx) + '_gibbs_eq_type'
+        phase_num_addit_terms = str(phase_idx) + '_num_additional_terms'
+        species_header = species_name + int_number(phase_gibbs_eq_type) + int_number(phase_num_addit_terms) + Group(num_elements * float_number)('pure_element_ratios')
+        return species_header
+
+    @staticmethod
+    def _species_reference_energy_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements):
         gibbs_equation_block = Forward()
         gibbs_magnetic_terms = Forward()
-        species_block = Group(species_name + (int_number(str(phase_idx) + '_gibbs_eq_type') + int_number(str(phase_idx) + '_num_additional_terms')).addParseAction(ChemsageGrammar.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)) + Group(num_elements * float_number) + gibbs_equation_block + gibbs_magnetic_terms)
+        gibbs_eq_block_func = ChemsageGrammar.__create_gibbs_equation_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, gibbs_equation_block, gibbs_magnetic_terms)
+        species_header = ChemsageGrammar._species_header_block(phase_idx, num_elements).addParseAction(gibbs_eq_block_func)
+        species_block = Group(species_header + gibbs_equation_block + gibbs_magnetic_terms)
         return species_block
 
     @staticmethod
@@ -196,7 +205,7 @@ class ChemsageGrammar():
                               phase_idx: int, num_gibbs_coeffs: int, num_elements: int,
                               ):
         header = ChemsageGrammar._solution_phase_header_block()
-        species_block = ChemsageGrammar._species_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements)
+        species_block = ChemsageGrammar._species_reference_energy_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements)
         return Group(header + Group(num_species_in_phase * species_block) + Optional(ChemsageGrammar._excess_block(num_excess_coeffs)))
 
     def __create_solution_phase_blocks(self, toks):
