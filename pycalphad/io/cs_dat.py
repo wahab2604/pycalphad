@@ -69,14 +69,14 @@ class ChemsageGrammar():
         4 3 4 5 6
         ```
         """
-        coefficients = Forward()
+        fwd_coefficients = Forward()
 
         def setup_coefficients(num_coeffs_toks):
             # gets the first token and extracts the integer value from the ParseResults
             num_coefficients = int(num_coeffs_toks[0][0])
-            coefficients << Group(num_coefficients*int_number)
+            fwd_coefficients << Group(num_coefficients*int_number)
             return num_coeffs_toks
-        return Suppress(int_number().setParseAction(setup_coefficients)) + coefficients(name)
+        return Suppress(int_number().setParseAction(setup_coefficients)) + fwd_coefficients(name)
 
     def _excess_block(self, num_excess_coeffs):
         """
@@ -136,7 +136,7 @@ class ChemsageGrammar():
             interaction_parameters
         return OneOrMore(Suppress('0') | Group(excess_term))('excess_terms')
 
-    def __create_gibbs_equation_block(self, phase_id, num_gibbs_coeffs, num_excess_coeffs, block, magnetic_terms):
+    def __create_gibbs_equation_block(self, phase_id, num_gibbs_coeffs, num_excess_coeffs, fwd_block, magnetic_terms):
         def f(toks):
             num_additional_terms = int(toks[str(phase_id)+'_num_additional_terms'])
             eq_type = int(toks[str(phase_id) + '_gibbs_eq_type'])
@@ -157,10 +157,10 @@ class ChemsageGrammar():
                     return num_pairs_toks
                 additional_terms_block = Suppress(int_number('num_coeff_exp_pairs').setParseAction(set_pairs)) + coeff_exponent_pairs
                 # parse the Gibbs coefficients plus the temperature upper limit
-                block << num_additional_terms * Group(Group((1 + num_gibbs_coeffs) * float_number) + additional_terms_block)
+                fwd_block << num_additional_terms * Group(Group((1 + num_gibbs_coeffs) * float_number) + additional_terms_block)
             else:
                 # parse the Gibbs coefficients plus the temperature upper limit
-                block << num_additional_terms * Group(Group((1 + num_gibbs_coeffs) * float_number))
+                fwd_block << num_additional_terms * Group(Group((1 + num_gibbs_coeffs) * float_number))
             if eq_type == 16:
                 if phase_id == 'temp':
                     # stoichiometric phase
