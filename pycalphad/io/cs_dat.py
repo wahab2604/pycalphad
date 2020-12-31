@@ -272,7 +272,7 @@ class ChemsageGrammar():
             num_species = num_species_in_solution_phase[phase_idx]
             soln_phase_block = self._solution_phase_block(num_species, num_excess_coeffs, phase_idx, num_gibbs_coeffs, num_elements)
             SUBQ_soln_phase_block = self._SUBQ_solution_phase_block(num_species, num_excess_coeffs, phase_idx, num_gibbs_coeffs, num_elements)
-            soln_phase_blocks.append(Optional(soln_phase_block | SUBQ_soln_phase_block))
+            soln_phase_blocks.append(soln_phase_block | SUBQ_soln_phase_block)
         soln_phase_expr = Empty()
         for soln_phase_block in soln_phase_blocks:
             soln_phase_expr = soln_phase_expr + soln_phase_block
