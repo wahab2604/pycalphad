@@ -155,14 +155,14 @@ class ChemsageGrammar():
                 def set_pairs(num_pairs_toks):
                     # gets the first token and extracts the integer value from the ParseResults
                     number_of_pairs = int(num_pairs_toks[0][0])
-                    coeff_exponent_pairs << Group(number_of_pairs*Group(2*float_number))
+                    coeff_exponent_pairs << Group(number_of_pairs*Group(float_number('coefficient') + float_number('exponent')))('coefficient_exponent_pairs')
                     return num_pairs_toks
                 additional_terms_block = Suppress(int_number('num_coeff_exp_pairs').setParseAction(set_pairs)) + coeff_exponent_pairs
                 # parse the Gibbs coefficients plus the temperature upper limit
-                fwd_block << num_additional_terms * Group(Group((1 + num_gibbs_coeffs) * float_number) + additional_terms_block)
+                fwd_block << num_additional_terms * Group(float_number('temperature_limit') + Group(num_gibbs_coeffs * float_number)('gibbs_coefficients') + additional_terms_block('additional_terms'))
             else:
                 # parse the Gibbs coefficients plus the temperature upper limit
-                fwd_block << num_additional_terms * Group(Group((1 + num_gibbs_coeffs) * float_number))
+                fwd_block << num_additional_terms * Group(float_number('temperature_limit') + Group(num_gibbs_coeffs * float_number)('gibbs_coefficients'))
             if eq_type == 16:
                 if phase_id == 'temp':
                     # stoichiometric phase
@@ -246,7 +246,7 @@ class ChemsageGrammar():
                               ):
         header = ChemsageGrammar._solution_phase_header_block()
         species_block = ChemsageGrammar._species_reference_energy_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements)
-        return Group(header + Group(num_species_in_phase * species_block) + Optional(ChemsageGrammar._excess_block(num_excess_coeffs)))
+        return Group(header + Group(num_species_in_phase * species_block)('surface_reference_terms') + Optional(ChemsageGrammar._excess_block(num_excess_coeffs))('excess_terms'))
 
     @staticmethod
     def _SUBQ_solution_phase_block(num_species_in_phase: int, num_excess_coeffs: int,
@@ -255,7 +255,7 @@ class ChemsageGrammar():
                                    ):
         header = ChemsageGrammar._solution_phase_header_block()
         species_block = ChemsageGrammar._SUBQ_species_reference_energy_block(phase_idx, num_gibbs_coeffs, num_excess_coeffs, num_elements)
-        return Group(header + Group(num_species_in_phase * species_block) + Optional(ChemsageGrammar._excess_block(num_excess_coeffs)))
+        return Group(header + Group(num_species_in_phase * species_block)('surface_reference_terms') + Optional(ChemsageGrammar._excess_block(num_excess_coeffs))('excess_terms'))
 
     def __create_solution_phase_blocks(self, toks):
         num_elements = toks['number_elements']
