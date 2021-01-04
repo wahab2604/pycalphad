@@ -233,7 +233,7 @@ class ChemsageGrammar():
         # SUBQ has an extra term for the stoichiometry of the pair in terms of the constituents of the pair
         # they seem to always come in groups of 5
         pair_constituent_stoichiometry = Group(5*float_number)('pair_constituent_stoichiometry')
-        coordination_number = float_number('coordination_number')
+        coordination_number = Optional(float_number('coordination_number'))  # Optional for SUBG, which specifies it with the phase
 
         # Finally, we construct the entire block
         species_block = Group(species_header + gibbs_equation_block + gibbs_magnetic_terms + pair_constituent_stoichiometry + coordination_number)
