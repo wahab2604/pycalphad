@@ -20,34 +20,12 @@ import pycalphad.variables as v
 from pyparsing import CaselessKeyword, CharsNotIn, Forward, Group, Combine, Empty
 from pyparsing import StringEnd, LineEnd, MatchFirst, OneOrMore, Optional, Regex, SkipTo
 from pyparsing import ZeroOrMore, Suppress, White, Word, alphanums, alphas, nums
-from pyparsing import delimitedList, ParseException
+from pyparsing import delimitedList, ParseException, countedArray, ungroup
 
 int_number = Word(nums).setParseAction(lambda t: [int(t[0])])
 species_name = Word(alphanums + '()')
 phase_name = Word(alphanums + '_')
 stoi_phase_name = Word(alphanums + '_()')
-
-
-def parseN(parser_element):
-    """Return a new parser element that parses N and N instances of parser_element N (N*parser_element)
-
-    Examples
-    --------
-    >>> from pycalphad.io.cs_dat import int_number, parseN, Word, alphas
-    >>> out = parseN(int_number).parseString("6 1 2 3 4 5 6")
-    >>> assert out.asList() == [1, 2, 3, 4, 5, 6]
-    >>> out = parseN(Word(alphas)).parseString("2 hello world")
-    >>> assert out.asList() == ["hello", "world"]
-
-    """
-    exprs = Forward()
-
-    def _setup_N_exprs(toks):
-        _N = int(toks[0])
-        exprs << _N*parser_element
-
-    N = int_number().setParseAction(_setup_N_exprs)
-    return Suppress(N) + exprs
 
 
 def grammar_header():
@@ -85,10 +63,10 @@ def grammar_header():
     species_mass_line = fwd_species_masses('pure_elements_mass')
 
     # gibbs coeffiecients indices line
-    gibbs_line = Group(parseN(int_number()))('gibbs_coefficient_idxs')
+    gibbs_line = Group(ungroup(countedArray(int_number())))('gibbs_coefficient_idxs')
 
     # excess coeffiecients indices line
-    excess_line = Group(parseN(int_number()))('excess_coefficient_idxs')
+    excess_line = Group(ungroup(countedArray(int_number())))('excess_coefficient_idxs')
 
     # combined header
     header = (

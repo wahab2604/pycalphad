@@ -89,6 +89,7 @@ def test_header_parsing(fn, num_soln_phases, num_stoich_phases, num_pure_element
         lines = fp.read()
     out = grammar_header().parseString(lines)
     print(out)
+    print(repr(out))
     assert len(out.list_soln_species_count) == num_soln_phases
     assert out.num_stoich_phases == num_stoich_phases
     assert len(out.pure_elements) == num_pure_elements
