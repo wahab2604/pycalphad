@@ -28,6 +28,91 @@ phase_name = Word(alphanums + '_')
 stoi_phase_name = Word(alphanums + '_()')
 
 
+def parseN(parser_element):
+    """Return a new parser element that parses N and N instances of parser_element N (N*parser_element)
+
+    Examples
+    --------
+    >>> from pycalphad.io.cs_dat import int_number, parseN, Word, alphas
+    >>> out = parseN(int_number).parseString("6 1 2 3 4 5 6")
+    >>> assert out.asList() == [1, 2, 3, 4, 5, 6]
+    >>> out = parseN(Word(alphas)).parseString("2 hello world")
+    >>> assert out.asList() == ["hello", "world"]
+
+    """
+    exprs = Forward()
+
+    def _setup_N_exprs(toks):
+        _N = int(toks[0])
+        exprs << _N*parser_element
+
+    N = int_number().setParseAction(_setup_N_exprs)
+    return Suppress(N) + exprs
+
+
+def grammar_header():
+    """Define the grammar to parse the header"""
+
+    # some forward definitions
+    fwd_list_soln_species_count = Forward()
+    def _set_list_soln_species_count(self, toks):
+        """Set fwd_list_soln_species_count depending on how many phases there are"""
+        toks['num_soln_phases'] = int(toks['num_soln_phases'])
+        fwd_list_soln_species_count << Group(toks['num_soln_phases'] * int_number)('list_soln_species_count')
+        return [toks['num_soln_phases']]
+
+    fwd_species_list = Forward()
+    fwd_species_masses = Forward()
+    def _set_species_list_masses(self, toks):
+        num_elements = int(toks['num_elements'])
+        # Element names, followed by their masses
+        fwd_species_list << Group(num_elements * species_name)
+        fwd_species_masses << Group(num_elements * float_number)
+
+    # comment line
+    comment_line = Suppress(SkipTo(LineEnd()))
+
+    # phases line
+    num_elements = int_number('num_elements').setParseAction(_set_species_list_masses)
+    num_soln_phases = int_number('num_soln_phases').setParseAction(_set_list_soln_species_count)
+    num_stoich_phases = int_number('num_stoich_phases')
+    phases_line = Suppress(num_elements) + Suppress(num_soln_phases) + fwd_list_soln_species_count + num_stoich_phases
+
+    # species line (really a "block" over multiple lines)
+    species_line = fwd_species_list('pure_elements')
+
+    # species mass line (really a "block" over multiple lines)
+    species_mass_line = fwd_species_masses('pure_elements_mass')
+
+    # gibbs coeffiecients indices line
+    gibbs_line = Group(parseN(int_number()))('gibbs_coefficient_idxs')
+
+    # excess coeffiecients indices line
+    excess_line = Group(parseN(int_number()))('excess_coefficient_idxs')
+
+    # combined header
+    header = (
+        comment_line +
+        phases_line +
+        species_line +
+        species_mass_line +
+        gibbs_line +
+        excess_line
+    )
+    return header
+
+
+def parse_header(string):
+    pass
+
+
+def parse_cs_dat(lines):
+    # Procedurally parse chemsage files
+    pass
+
+
+
+
 class ChemsageGrammar():
     """
     By convention:
@@ -310,6 +395,7 @@ class ChemsageGrammar():
         # block and treating the rest of the file as a comment.
         grammar = self._header_block() + self._phases_block() + SkipTo(StringEnd())
         return grammar
+
 
 
 def create_cs_dat_grammar():
