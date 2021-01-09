@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 import pyparsing
 pyparsing.ParserElement.enablePackrat(0)
-from pycalphad.io.cs_dat import create_cs_dat_grammar, grammar_header
+from pycalphad.io.cs_dat import create_cs_dat_grammar, grammar_header, grammar_endmember
 
 # The number of solution phases here EXCLUDES gas phase if it's not present
 # (i.e. the num_soln_phases here may be one less than line 2)
@@ -115,7 +115,7 @@ def test_parse_viitala_header():
    asdfl
    asdfjkasdf
    asdf
-"""
+    """
     out = grammar_header().parseString(HEADER)
     print(out)
     assert len(out.list_soln_species_count) == 5
@@ -128,4 +128,57 @@ def test_parse_viitala_header():
     assert out.gibbs_coefficient_idxs.asList() == [1, 2, 3, 4, 5, 6]
     assert len(out.excess_coefficient_idxs) == 6
     assert out.gibbs_coefficient_idxs.asList() == [1, 2, 3, 4, 5, 6]
+
+
+def test_parse_endmember():
+    ENDMEMBER_1 = """ CuCl
+   1  1    0.0    0.0    1.0    0.0    1.0    0.0    0.0    0.0
+  3000.0000     -151122.87      354.57317     -66.944000         0.00000000
+     0.00000000     0.00000000
+    """
+    out = grammar_endmember(8, 6).parseString(ENDMEMBER_1)
+    print(repr(out))
+    print('------')
+    print(out)
+    assert out.name == 'CuCl'
+    assert out.gibbs_eq_type == 1
+    assert len(out.pair_stoichiometry) == 8
+    assert len(out.intervals) == 1
+    assert np.isclose(out.intervals[0].temperature, 3000.0)
+    assert len(out.intervals[0].coefficients) == 6
+    assert len(out.intervals[0].additional_coeff_pairs) == 0
+
+    ENDMEMBER_2 = """ FeCl3
+   4  3    0.0    0.0    0.0    1.0    3.0    0.0    0.0    0.0
+  577.00000     -1419517.7      30687.563     -3436.4600     0.62998063
+     0.00000000     0.00000000
+ 2  674287.33      99.00 -360918.86       0.50
+  1500.0000      6608071.2     -33634.605      3322.5090     -.35542634
+ 0.15640951E-04 -87464397.
+ 2 -2322827.9      99.00  630846.86       0.50
+  6000.0000     -370906.17      349.95802     -83.000000         0.00000000
+     0.00000000     0.00000000
+ 1     0.00000000   0.00
+
+    """
+    out = grammar_endmember(8, 6).parseString(ENDMEMBER_2)
+    print(repr(out))
+    print('------')
+    print(out)
+    assert out.name == 'FeCl3'
+    assert out.gibbs_eq_type == 4
+    assert len(out.pair_stoichiometry) == 8
+    assert len(out.intervals) == 3
+    print()
+    print(out.intervals[0].additional_coeff_pairs)
+    print(repr(out.intervals[0].additional_coeff_pairs))
+    assert np.isclose(out.intervals[0].temperature, 577.0)
+    assert len(out.intervals[0].coefficients) == 6
+    assert len(out.intervals[0].additional_coeff_pairs) == 2
+    assert np.isclose(out.intervals[1].temperature, 1500.0)
+    assert len(out.intervals[1].coefficients) == 6
+    assert len(out.intervals[1].additional_coeff_pairs) == 2
+    assert np.isclose(out.intervals[2].temperature, 6000.0)
+    assert len(out.intervals[2].coefficients) == 6
+    assert len(out.intervals[2].additional_coeff_pairs) == 1
 
