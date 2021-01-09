@@ -79,25 +79,6 @@ def grammar_header():
     )
     return header
 
-# def grammar_endmember(num_gibbs_coeffs):
-#     additional_coeff_pairs = Forward()
-#     def _set_additional_coeff_pairs(toks):
-#         if toks.gibbs_eq_type == 4:
-#             pair = Group(float_number('coefficient') + float_number('exponent'))
-#             additional_coeff_pairs << Group(ungroup(countedArray(pair)))('additional_coeff_pairs')
-#         else:
-#             additional_coeff_pairs << Empty()('additional_coeff_pairs')
-#         return toks
-#     name = species_name('name')
-#     gibbs_eq_type = int_number('gibbs_eq_type').addParseAction(_set_additional_coeff_pairs)
-#     temperature = float_number('temperature')
-#     coefficients = Group(num_gibbs_coeffs * float_number)('coefficients')
-
-#     # TODO: use a Forward and set this depending on gibbs_eq_type, using Empty() otherwise
-#     intervals = Group(OneOrMore(temperature + coefficients + additional_coeff_pairs))('intervals')
-#     grammar = name + gibbs_eq_type + additional_coeff_pairs
-#     return grammar
-
 
 def grammar_endmember(num_pure_elements, num_gibbs_coeffs):
     name = species_name('name')
