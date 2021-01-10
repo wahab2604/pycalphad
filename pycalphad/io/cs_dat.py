@@ -238,8 +238,8 @@ def parse_cs_dat(instring):
     stoichiometric_phases = []
     # TODO: better handling and validation of this
     remaining_tokens = ' '.join(toks)
-    print(remaining_tokens)
-    return header, solution_phases, stoichiometric_phases
+    # print(remaining_tokens)
+    return header, solution_phases, stoichiometric_phases, toks
 
 
 def read_cs_dat(dbf: Database, fd):

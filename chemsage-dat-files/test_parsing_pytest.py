@@ -7,9 +7,6 @@ from pycalphad.io.cs_dat import *
 header_data = [
     # filename, num_soln_phases, num_stoich_phases, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs
 
-    # Highest priority to pass:
-    ("CuZnFeCl-Viitala (1).dat", 5, 11, 8, 6, 6),  # https://doi.org/10.1016/j.calphad.2019.101667
-
     # Data files from FACT documentation
     # See https://gtt-technologies.de/software/chemapp/documentation/online-manual/
     ("Pb-Sn.dat", 5, 0, 2, 6, 2),
@@ -32,6 +29,7 @@ header_data = [
     ("test14.dat", 42, 8, 4, 6, 6),
 
     # Data files from publications
+    ("CuZnFeCl-Viitala (1).dat", 5, 11, 8, 6, 6),  # https://doi.org/10.1016/j.calphad.2019.101667
 ]
 @pytest.mark.parametrize("fn, num_soln_phases, num_stoich_phases, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs", header_data)
 def test_header_parsing(fn, num_soln_phases, num_stoich_phases, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs):
@@ -478,3 +476,49 @@ def test_parse_stoich_phase():
     assert len(phase_stoich.endmembers) == 1
     assert len(phase_stoich.endmembers[0].intervals) == 2
     assert len(toks) == 0  # completion
+
+
+
+# determining tokens remaining:
+# def remtoks(filename):
+#     with open(filename) as fp:
+#         data = fp.read()
+#     toks = tokenize(data, 1)
+#     idxs = [i for i, x in enumerate(toks) if x.startswith('##')]
+#     print(len(toks) - idxs[0] if len(idxs) > 0 else 0)
+
+full_parses = [
+    # filename, num_soln_phases, num_stoich_phases, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs
+
+    # Data files from FACT documentation
+    # See https://gtt-technologies.de/software/chemapp/documentation/online-manual/
+    ("Pb-Sn.dat", 90),
+    ("C-N-O.dat", 66),
+    ("C-O-Si.dat", 113),
+    ("Fe-C.dat", 308),
+    ("Fe2SiO4-Mg2SiO4.dat", 142),
+    ("O-H-EA.dat", 102),
+    ("Pitzer.dat", 94),
+    ("subl-ex.dat", 181),
+
+    # Data files from thermochimica `data/` directory
+    # See https://github.com/ornl-cees/thermochimica
+    ("C-O.dat", 0),
+    ("W-Au-Ar-Ne-O_04.dat", 0),
+    ("FeCuCbase.dat", 0),
+    ("FeTiVO.dat", 0),
+    ("Kaye_NobleMetals.dat", 0),
+    ("ZIRC-noSUBI.dat", 0),
+    ("test14.dat", 0),
+
+    # Data files from publications
+    ("CuZnFeCl-Viitala (1).dat", 0),
+]
+
+
+@pytest.mark.parametrize("filename, remaining_toks", full_parses)
+def test_full_parsing(filename, remaining_toks):
+    with open(filename) as fp:
+        data = fp.read()
+    header, solns, stoichs, toks = parse_cs_dat(data)
+    assert len(toks) == remaining_toks  # some files have comments, etc. at the end. this accounts for that.
