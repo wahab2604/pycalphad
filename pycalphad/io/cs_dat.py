@@ -17,93 +17,104 @@ Careful of a gotcha:  `obj.setParseAction` modifies the object in place but call
 from pycalphad import Database
 from pycalphad.io.grammar import float_number, chemical_formula
 import pycalphad.variables as v
-from pyparsing import CaselessKeyword, CharsNotIn, Forward, Group, Combine, Empty
+from pyparsing import CaselessKeyword, CharsNotIn, Forward, Group, Combine, Empty, Literal
 from pyparsing import StringEnd, LineEnd, MatchFirst, OneOrMore, Optional, Regex, SkipTo
 from pyparsing import ZeroOrMore, Suppress, White, Word, alphanums, alphas, nums
 from pyparsing import delimitedList, ParseException, countedArray, ungroup
+from collections import namedtuple, deque
 
 int_number = Word(nums).setParseAction(lambda t: [int(t[0])])
 species_name = Word(alphanums + '()')
-phase_name = Word(alphanums + '_')
+PHASE_NAME = Word(alphanums + '_')
 stoi_phase_name = Word(alphanums + '_()')
+    # assert len(out.list_soln_species_count) == 5
+    # assert out.list_soln_species_count.asList() == [0, 21, 3, 4, 3]
+    # assert out.num_stoich_phases == 11
+    # assert len(out.pure_elements) == 8
+    # assert out.pure_elements.asList() == ['Pb', 'Zn', 'Cu', 'Fe', 'Cl', 'e(CuCl)', 'e(FeZnsoln)', 'e(ZnFesoln)']
+    # assert np.allclose(out.pure_elements_mass.asList(), [207.2, 65.38, 63.546, 55.845, 35.453, 0.00054858, 0.00054858, 0.00054858])
+    # assert len(out.gibbs_coefficient_idxs) == 6
+    # assert out.gibbs_coefficient_idxs.asList() == [1, 2, 3, 4, 5, 6]
+    # assert len(out.excess_coefficient_idxs) == 6
+    # assert out.gibbs_coefficient_idxs.asList() == [1, 2, 3, 4, 5, 6]
 
+def popleftN(_deque, N):
+    if N < 1:
+        raise ValueError('N must be >=1')
+    return (_deque.popleft() for _ in range(N))
 
-def grammar_header():
-    """Define the grammar to parse the header"""
+def parseN(_deque, N, cls):
+    if N < 1:
+        raise ValueError('N must be >=1')
+    return [cls(x) for x in popleftN(_deque, N)]
 
-    # some forward definitions
-    fwd_list_soln_species_count = Forward()
-    def _set_list_soln_species_count(self, toks):
-        """Set fwd_list_soln_species_count depending on how many phases there are"""
-        toks['num_soln_phases'] = int(toks['num_soln_phases'])
-        fwd_list_soln_species_count << Group(toks['num_soln_phases'] * int_number)('list_soln_species_count')
-        return [toks['num_soln_phases']]
+def parse(_deque, cls): return cls(_deque.popleft())
 
-    fwd_species_list = Forward()
-    fwd_species_masses = Forward()
-    def _set_species_list_masses(self, toks):
-        num_elements = int(toks['num_elements'])
-        # Element names, followed by their masses
-        fwd_species_list << Group(num_elements * species_name)
-        fwd_species_masses << Group(num_elements * float_number)
+Header = namedtuple('Header', ('list_soln_species_count', 'num_stoich_phases', 'pure_elements', 'pure_elements_mass', 'gibbs_coefficient_idxs', 'excess_coefficient_idxs'))
 
-    # comment line
-    comment_line = Suppress(SkipTo(LineEnd()))
+def tokenize(instring, startline=0):
+    return deque('\n'.join(instring.splitlines()[startline:]).split())
 
-    # phases line
-    num_elements = int_number('num_elements').setParseAction(_set_species_list_masses)
-    num_soln_phases = int_number('num_soln_phases').setParseAction(_set_list_soln_species_count)
-    num_stoich_phases = int_number('num_stoich_phases')
-    phases_line = Suppress(num_elements) + Suppress(num_soln_phases) + fwd_list_soln_species_count + num_stoich_phases
-
-    # species line (really a "block" over multiple lines)
-    species_line = fwd_species_list('pure_elements')
-
-    # species mass line (really a "block" over multiple lines)
-    species_mass_line = fwd_species_masses('pure_elements_mass')
-
-    # gibbs coeffiecients indices line
-    gibbs_line = Group(ungroup(countedArray(int_number())))('gibbs_coefficient_idxs')
-
-    # excess coeffiecients indices line
-    excess_line = Group(ungroup(countedArray(int_number())))('excess_coefficient_idxs')
-
-    # combined header
-    header = (
-        comment_line +
-        phases_line +
-        species_line +
-        species_mass_line +
-        gibbs_line +
-        excess_line
-    )
-    return header
+def parse_header(toks):
+    if isinstance(toks, list):
+        toks = toks.deque(toks)
+    num_pure_elements = parse(toks, int)
+    num_soln_phases = parse(toks, int)
+    list_soln_species_count = parseN(toks, num_soln_phases, int)
+    num_stoich_phases = parse(toks, int)
+    pure_elements = parseN(toks, num_pure_elements, str)
+    pure_elements_mass = parseN(toks, num_pure_elements, float)
+    num_gibbs_coeffs = parse(toks, int)
+    gibbs_coefficient_idxs = parseN(toks, num_gibbs_coeffs, int)
+    num_excess_coeffs = parse(toks, int)
+    excess_coefficient_idxs = parseN(toks, num_excess_coeffs, int)
+    header = Header(list_soln_species_count, num_stoich_phases, pure_elements, pure_elements_mass, gibbs_coefficient_idxs, excess_coefficient_idxs)
+    return header, toks
 
 
 def grammar_endmember(num_pure_elements, num_gibbs_coeffs):
-    name = species_name('name')
-    gibbs_eq_type = int_number('gibbs_eq_type')
-    num_intervals = Suppress(int_number('num_intervals'))
-    pair_stoichiometry = Group(num_pure_elements * float_number)('pair_stoichiometry')
+    additional_coeff_pairs = Forward()
+    def _set_additional_coeff_pairs(toks):
+        if toks.gibbs_eq_type in (4,):
+            # print('additional')
+            pair = Group(float_number('coefficient') + float_number('exponent'))
+            additional_coeff_pairs << Group(ungroup(countedArray(pair)))('additional_coeff_pairs')
+        else:
+            # print('not additional')
+            additional_coeff_pairs << Empty()('additional_coeff_pairs')
+        return toks
 
+    name = species_name('name')
+    gibbs_eq_type = int_number('gibbs_eq_type').addParseAction(_set_additional_coeff_pairs)
+    num_intervals = Suppress(int_number('num_intervals'))
+    stoichiometry_pure_elements = Group(num_pure_elements * float_number)('stoichiometry_pure_elements')
     temperature = float_number('temperature')
     coefficients = Group(num_gibbs_coeffs * float_number)('coefficients')
-    pair = Group(float_number('coefficient') + float_number('exponent'))
-    additional_coeff_pairs = Optional(Group(ungroup(countedArray(pair)))('additional_coeff_pairs'))
 
     # TODO: use a Forward and set this depending on gibbs_eq_type, using Empty() otherwise
     intervals = Group(OneOrMore(Group(temperature + coefficients + additional_coeff_pairs)))('intervals')
-    grammar = name + gibbs_eq_type + num_intervals + pair_stoichiometry + intervals
+    grammar = name + gibbs_eq_type + num_intervals + stoichiometry_pure_elements + intervals
     return grammar
 
-def parse_header(string):
-    pass
+
+def grammar_phase_SUBQ(num_pure_elements, num_gibbs_coeffs):
+    phase_name = PHASE_NAME('phase_name')
+    phase_type = Literal('SUBQ')('phase_type')
+    num_endmembers = Suppress(int_number('num_endmembers'))
+    num_quadruplets = Suppress(int_number('num_quadruplets'))
+    endmember = grammar_endmember(num_pure_elements, num_gibbs_coeffs)
+    stoichiometry_pairs = Group(5*float_number)('stoichiometry_pairs')
+    coordination = float_number('coordination')
+    endmembers = Group(OneOrMore(Group(endmember + stoichiometry_pairs + coordination)))('endmembers')
+    num_constituents_subl_1 = int_number('num_constituents_subl_1')
+    num_constituents_subl_2 = int_number('num_constituents_subl_2')
 
 
-def parse_cs_dat(lines):
-    # Procedurally parse chemsage files
-    pass
 
+    # grammar = phase_name + phase_type + num_endmembers + num_quadruplets + endmembers
+    grammar = MatchFirst(phase_name + phase_type + num_endmembers + num_quadruplets + endmembers) + num_constituents_subl_1 + num_constituents_subl_2
+    # grammar = endmembers
+    return grammar
 
 
 

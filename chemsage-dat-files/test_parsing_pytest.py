@@ -4,8 +4,7 @@ import pytest
 import numpy as np
 import pyparsing
 pyparsing.ParserElement.enablePackrat(0)
-from pycalphad.io.cs_dat import create_cs_dat_grammar, grammar_header, grammar_endmember
-
+from pycalphad.io.cs_dat import *
 # The number of solution phases here EXCLUDES gas phase if it's not present
 # (i.e. the num_soln_phases here may be one less than line 2)
 database_filenames = [
@@ -88,7 +87,7 @@ header_data = [
 def test_header_parsing(fn, num_soln_phases, num_stoich_phases, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs):
     with open(fn) as fp:
         lines = fp.read()
-    out = grammar_header().parseString(lines)
+    out, toks = parse_header(tokenize(lines, 1))
     print(out)
     print(repr(out))
     assert len(out.list_soln_species_count) == num_soln_phases
@@ -116,18 +115,20 @@ def test_parse_viitala_header():
    asdfjkasdf
    asdf
     """
-    out = grammar_header().parseString(HEADER)
+    alltoks = tokenize(HEADER, 1)
+    print(alltoks)
+    out, toks = parse_header(alltoks)
     print(out)
     assert len(out.list_soln_species_count) == 5
-    assert out.list_soln_species_count.asList() == [0, 21, 3, 4, 3]
+    assert out.list_soln_species_count == [0, 21, 3, 4, 3]
     assert out.num_stoich_phases == 11
     assert len(out.pure_elements) == 8
-    assert out.pure_elements.asList() == ['Pb', 'Zn', 'Cu', 'Fe', 'Cl', 'e(CuCl)', 'e(FeZnsoln)', 'e(ZnFesoln)']
-    assert np.allclose(out.pure_elements_mass.asList(), [207.2, 65.38, 63.546, 55.845, 35.453, 0.00054858, 0.00054858, 0.00054858])
+    assert out.pure_elements == ['Pb', 'Zn', 'Cu', 'Fe', 'Cl', 'e(CuCl)', 'e(FeZnsoln)', 'e(ZnFesoln)']
+    assert np.allclose(out.pure_elements_mass, [207.2, 65.38, 63.546, 55.845, 35.453, 0.00054858, 0.00054858, 0.00054858])
     assert len(out.gibbs_coefficient_idxs) == 6
-    assert out.gibbs_coefficient_idxs.asList() == [1, 2, 3, 4, 5, 6]
+    assert out.gibbs_coefficient_idxs == [1, 2, 3, 4, 5, 6]
     assert len(out.excess_coefficient_idxs) == 6
-    assert out.gibbs_coefficient_idxs.asList() == [1, 2, 3, 4, 5, 6]
+    assert out.gibbs_coefficient_idxs == [1, 2, 3, 4, 5, 6]
 
 
 def test_parse_endmember():
@@ -142,7 +143,7 @@ def test_parse_endmember():
     print(out)
     assert out.name == 'CuCl'
     assert out.gibbs_eq_type == 1
-    assert len(out.pair_stoichiometry) == 8
+    assert len(out.stoichiometry_pure_elements) == 8
     assert len(out.intervals) == 1
     assert np.isclose(out.intervals[0].temperature, 3000.0)
     assert len(out.intervals[0].coefficients) == 6
@@ -167,7 +168,7 @@ def test_parse_endmember():
     print(out)
     assert out.name == 'FeCl3'
     assert out.gibbs_eq_type == 4
-    assert len(out.pair_stoichiometry) == 8
+    assert len(out.stoichiometry_pure_elements) == 8
     assert len(out.intervals) == 3
     print()
     print(out.intervals[0].additional_coeff_pairs)
