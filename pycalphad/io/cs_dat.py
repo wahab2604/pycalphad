@@ -65,6 +65,16 @@ class Endmember:
 
 
 @dataclass
+class EndmemberRealGas(Endmember):
+    # Tsonopoulos data
+    Tc: float
+    Pc: float
+    Vc: float
+    acentric_factor: float
+    dipole_moment: float
+
+
+@dataclass
 class EndmemberSUBQ(Endmember):
     stoichiometry_quadruplet: [float]
     coordination: float
@@ -82,6 +92,11 @@ class _Phase:
     phase_name: str
     phase_type: str
     endmembers: [Endmember]
+
+
+@dataclass
+class Phase_RealGas(_Phase):
+    endmembers: [EndmemberRealGas]
 
 
 @dataclass
@@ -231,12 +246,25 @@ def parse_excess_parameters(toks, num_excess_coeffs):
 
 def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     endmembers = [parse_endmember(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_const)]
-    if phase_type == 'IDMX':
+    if phase_type in ('IDMX'):
         # No excess parameters
         excess_parameters = []
     else:
         excess_parameters = parse_excess_parameters(toks, num_excess_coeffs)
     return Phase_CEF(phase_name, phase_type, endmembers, excess_parameters)
+
+
+def parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const):
+    endmembers = []
+    for _ in range(num_const):
+        em = parse_endmember(toks, num_pure_elements, num_gibbs_coeffs)
+        Tc = toks.parse(float)
+        Pc = toks.parse(float)
+        Vc = toks.parse(float)
+        acentric_factor = toks.parse(float)
+        dipole_moment = toks.parse(float)
+        endmembers.append(EndmemberRealGas(em.species_name, em.gibbs_eq_type, em.stoichiometry_pure_elements, em.intervals, Tc, Pc, Vc, acentric_factor, dipole_moment))
+    return Phase_RealGas(phase_name, phase_type, endmembers)
 
 
 def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
@@ -245,6 +273,8 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
     phase_type = toks.parse(str)
     if phase_type == 'SUBQ':
         phase = parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs)
+    elif phase_type == 'IDVD':
+        phase = parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
     elif phase_type in ('IDMX', 'SUBL', 'RKMP'):
         # all these phases parse the same
         phase = parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const)
