@@ -71,10 +71,20 @@ class EndmemberSUBQ(Endmember):
 
 
 @dataclass
+class ExcessCEF:
+    dummy: str
+
+
+@dataclass
 class _Phase:
     phase_name: str
     phase_type: str
     endmembers: [Endmember]
+
+
+@dataclass
+class Phase_CEF(_Phase):
+    excess_parameters: [ExcessCEF]
 
 
 @dataclass
@@ -127,7 +137,8 @@ def parse_interval(toks: TokenParser, num_gibbs_coeffs, has_additional_terms):
 def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
     species_name = toks.parse(str)
     gibbs_eq_type = toks.parse(int)
-    has_additional_terms = gibbs_eq_type in (4,)
+    has_magnetic = gibbs_eq_type > 12
+    has_additional_terms = ((gibbs_eq_type - 12) if has_magnetic else gibbs_eq_type) in (4,)
     num_intervals = toks.parse(int)
     stoichiometry_pure_elements = toks.parseN(num_pure_elements, float)
     intervals = [parse_interval(toks, num_gibbs_coeffs, has_additional_terms) for _ in range(num_intervals)]
@@ -147,6 +158,7 @@ def parse_quadruplet(toks):
     quad_idx = toks.parseN(4, int)
     quad_coords = toks.parseN(4, float)
     return Quadruplet(quad_idx, quad_coords)
+
 
 def parse_subq_excess(toks, mixing_type, num_excess_coeffs):
     mixing_code = toks.parse(str)
@@ -186,6 +198,12 @@ def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_
     return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const, subl_1_const, subl_2_const, subl_1_charges, subl_1_chemical_groups, subl_2_charges, subl_2_chemical_groups, subl_const_idx_pairs, quadruplets, excess_parameters)
 
 
+def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
+    endmembers = [parse_endmember(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_const)]
+    excess_parameters = []
+    return Phase_CEF(phase_name, phase_type, endmembers, excess_parameters)
+
+
 def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     """Dispatches to the correct parser depending on the phase type"""
     phase_name = toks.parse(str)
@@ -196,7 +214,7 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
         raise NotImplementedError("SUBG not yet supported")
     if phase_type in ('IDMX', 'SUBL', 'RKMP'):
         # all these phases parse the same
-        raise NotImplementedError("IDMX, SUBL, RKMP not yet supported")
+        phase = parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const)
     return phase
 
 
