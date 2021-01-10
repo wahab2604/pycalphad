@@ -523,3 +523,30 @@ def test_full_parsing(filename, remaining_toks):
         data = fp.read()
     header, solns, stoichs, toks = parse_cs_dat(data)
     assert len(toks) == remaining_toks  # some files have comments, etc. at the end. this accounts for that.
+
+
+# 2 species interacting, 4 coeffs
+EXCESS_TERM_1 = """ 2
+ 1   2   3
+-124320.00      28.500000     0.00000000     0.00000000
+ 19300.000     0.00000000     0.00000000     0.00000000
+ 49260.000     -19.000000     0.00000000     0.00000000
+ 2
+ 1   3   1
+-34671.000     0.00000000     0.00000000     0.00000000
+ 0
+"""
+
+
+def test_parse_excess_parameters():
+    toks = tokenize(EXCESS_TERM_1)
+    excess_terms = parse_excess_parameters(toks, 4)
+    assert len(toks) == 0
+    assert excess_terms[0].interacting_species_idxs == [1, 2]
+    assert excess_terms[1].interacting_species_idxs == [1, 2]
+    assert excess_terms[2].interacting_species_idxs == [1, 2]
+    assert excess_terms[3].interacting_species_idxs == [1, 3]
+    assert len(excess_terms) == 4
+    assert np.allclose(excess_terms[1].parameters, [19300.0, 0.0, 0.0, 0.0])
+    assert np.allclose(excess_terms[3].parameters, [-34671.0, 0.0, 0.0, 0.0])
+    assert [len(xt.parameters) for xt in excess_terms] == [4, 4, 4, 4]

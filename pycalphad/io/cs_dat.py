@@ -72,7 +72,9 @@ class EndmemberSUBQ(Endmember):
 
 @dataclass
 class ExcessCEF:
-    dummy: str
+    interacting_species_idxs: [str]
+    parameter_order: int
+    parameters: [float]
 
 
 @dataclass
@@ -150,6 +152,7 @@ def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
     has_magnetic = gibbs_eq_type > 12
     gibbs_eq_type_reduced = (gibbs_eq_type - 12) if has_magnetic else gibbs_eq_type
     has_additional_terms = gibbs_eq_type_reduced in (4,)
+    # TODO: type 7 is H298, S298, 4 cp coefficients, if there's >1 term, then there's a delta H after each interval except the last
     if gibbs_eq_type_reduced not in (1, 4,) or has_magnetic:
         raise ValueError(f"Gibbs equation type {gibbs_eq_type} is not yet supported.")
     num_intervals = toks.parse(int)
@@ -213,9 +216,26 @@ def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_
     return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const, subl_1_const, subl_2_const, subl_1_charges, subl_1_chemical_groups, subl_2_charges, subl_2_chemical_groups, subl_const_idx_pairs, quadruplets, excess_parameters)
 
 
+def parse_excess_parameters(toks, num_excess_coeffs):
+    excess_terms = []
+    while True:
+        num_interacting_species = toks.parse(int)
+        if num_interacting_species == 0:
+            break
+        interacting_species_idxs = toks.parseN(num_interacting_species, int)
+        num_terms = toks.parse(int)
+        for parameter_order in range(num_terms):
+            excess_terms.append(ExcessCEF(interacting_species_idxs, parameter_order, toks.parseN(num_excess_coeffs, float)))
+    return excess_terms
+
+
 def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     endmembers = [parse_endmember(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_const)]
-    excess_parameters = []  # TODO: implement excess parameters
+    if phase_type == 'IDMX':
+        # No excess parameters
+        excess_parameters = []
+    else:
+        excess_parameters = parse_excess_parameters(toks, num_excess_coeffs)
     return Phase_CEF(phase_name, phase_type, endmembers, excess_parameters)
 
 
