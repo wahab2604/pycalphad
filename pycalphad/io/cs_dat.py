@@ -115,7 +115,7 @@ def tokenize(instring, startline=0):
     return TokenParser('\n'.join(instring.splitlines()[startline:]).split())
 
 
-def parse_header(toks: TokenParser):
+def parse_header(toks: TokenParser) -> Header:
     num_pure_elements = toks.parse(int)
     num_soln_phases = toks.parse(int)
     list_soln_species_count = toks.parseN(num_soln_phases, int)
@@ -130,7 +130,7 @@ def parse_header(toks: TokenParser):
     return header
 
 
-def parse_interval(toks: TokenParser, num_gibbs_coeffs, has_additional_terms):
+def parse_interval(toks: TokenParser, num_gibbs_coeffs, has_additional_terms) -> Interval:
     temperature = toks.parse(float)
     coefficients = toks.parseN(num_gibbs_coeffs, float)
     if has_additional_terms:
@@ -143,6 +143,9 @@ def parse_interval(toks: TokenParser, num_gibbs_coeffs, has_additional_terms):
 
 def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
     species_name = toks.parse(str)
+    if toks[0] == '#':
+        # special case for stoichiometric phases, this is a dummy species, skip it
+        _ = toks.parse(str)
     gibbs_eq_type = toks.parse(int)
     has_magnetic = gibbs_eq_type > 12
     has_additional_terms = ((gibbs_eq_type - 12) if has_magnetic else gibbs_eq_type) in (4,)
@@ -234,8 +237,12 @@ def parse_stoich_phase(toks, num_pure_elements, num_gibbs_coeffs):
 def parse_cs_dat(instring):
     toks = tokenize(instring, startline=1)
     header = parse_header(toks)
-    solution_phases = []
-    stoichiometric_phases = []
+    num_pure_elements = len(header.pure_elements)
+    num_gibbs_coeffs = len(header.gibbs_coefficient_idxs)
+    num_excess_coeffs = len(header.excess_coefficient_idxs)
+    # num_const = 0 is gas phase that isn't present, so skip it
+    solution_phases = [parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const) for num_const in header.list_soln_species_count if num_const != 0]
+    stoichiometric_phases = [parse_stoich_phase(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(header.num_stoich_phases)]
     # TODO: better handling and validation of this
     remaining_tokens = ' '.join(toks)
     # print(remaining_tokens)
