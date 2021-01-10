@@ -75,6 +75,11 @@ class EndmemberRealGas(Endmember):
 
 
 @dataclass
+class EndmemberAqueous(Endmember):
+    charge: float
+
+
+@dataclass
 class EndmemberSUBQ(Endmember):
     stoichiometry_quadruplet: [float]
     coordination: float
@@ -104,6 +109,11 @@ class Phase_Stoichiometric:
     phase_name: str
     phase_type: str
     endmembers: [Endmember]  # exactly one
+
+
+@dataclass
+class Phase_Aqueous(_Phase):
+    endmembers: [EndmemberAqueous]
 
 
 @dataclass
@@ -176,6 +186,12 @@ def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
     # TODO: magnetic terms
     # solution phase: 4 floats, stoichiometric: 2 floats
     return Endmember(species_name, gibbs_eq_type, stoichiometry_pure_elements, intervals)
+
+
+def parse_endmember_aqueous(toks: TokenParser, num_pure_elements: int, num_gibbs_coeffs: int):
+    # add an extra "pure element" to parse the charge
+    em = parse_endmember(toks, num_pure_elements + 1, num_gibbs_coeffs)
+    return EndmemberAqueous(em.species_name, em.gibbs_eq_type, em.stoichiometry_pure_elements[1:], em.intervals, em.stoichiometry_pure_elements[0])
 
 
 def parse_endmember_subq(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
@@ -267,6 +283,11 @@ def parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gi
     return Phase_RealGas(phase_name, phase_type, endmembers)
 
 
+def parse_phase_aqueous(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const):
+    endmembers = [parse_endmember_aqueous(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_const)]
+    return Phase_Aqueous(phase_name, phase_type, endmembers)
+
+
 def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     """Dispatches to the correct parser depending on the phase type"""
     phase_name = toks.parse(str)
@@ -275,6 +296,8 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
         phase = parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs)
     elif phase_type == 'IDVD':
         phase = parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
+    elif phase_type == 'IDWZ':
+        phase = parse_phase_aqueous(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
     elif phase_type in ('IDMX', 'SUBL', 'RKMP'):
         # all these phases parse the same
         phase = parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const)
