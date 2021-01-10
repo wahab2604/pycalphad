@@ -18,20 +18,19 @@ from pycalphad import Database
 from collections import namedtuple, deque
 
 
-def popleftN(_deque, N):
-    if N < 1:
-        raise ValueError('N must be >=1')
-    return (_deque.popleft() for _ in range(N))
+class TokenParser(deque):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.token_index = 0
 
+    def parse(self, cls: type):
+        self.token_index += 1
+        return cls(self.popleft())
 
-def parseN(_deque, N, cls):
-    if N < 1:
-        raise ValueError('N must be >=1')
-    return [cls(x) for x in popleftN(_deque, N)]
-
-
-def parse(_deque, cls):
-    return cls(_deque.popleft())
+    def parseN(self, N: int, cls: type):
+        if N < 1:
+            raise ValueError(f'N must be >=1, got {N}')
+        return [self.parse(cls) for _ in range(N)]
 
 
 Header = namedtuple('Header', ('list_soln_species_count', 'num_stoich_phases', 'pure_elements', 'pure_elements_mass', 'gibbs_coefficient_idxs', 'excess_coefficient_idxs'))
@@ -69,42 +68,42 @@ class Phase_SUBQ(_Phase):
 
 
 def tokenize(instring, startline=0):
-    return deque('\n'.join(instring.splitlines()[startline:]).split())
+    return TokenParser('\n'.join(instring.splitlines()[startline:]).split())
 
 
-def parse_header(toks: deque):
-    num_pure_elements = parse(toks, int)
-    num_soln_phases = parse(toks, int)
-    list_soln_species_count = parseN(toks, num_soln_phases, int)
-    num_stoich_phases = parse(toks, int)
-    pure_elements = parseN(toks, num_pure_elements, str)
-    pure_elements_mass = parseN(toks, num_pure_elements, float)
-    num_gibbs_coeffs = parse(toks, int)
-    gibbs_coefficient_idxs = parseN(toks, num_gibbs_coeffs, int)
-    num_excess_coeffs = parse(toks, int)
-    excess_coefficient_idxs = parseN(toks, num_excess_coeffs, int)
+def parse_header(parser: TokenParser):
+    num_pure_elements = parser.parse(int)
+    num_soln_phases = parser.parse(int)
+    list_soln_species_count = parser.parseN(num_soln_phases, int)
+    num_stoich_phases = parser.parse(int)
+    pure_elements = parser.parseN(num_pure_elements, str)
+    pure_elements_mass = parser.parseN(num_pure_elements, float)
+    num_gibbs_coeffs = parser.parse(int)
+    gibbs_coefficient_idxs = parser.parseN(num_gibbs_coeffs, int)
+    num_excess_coeffs = parser.parse(int)
+    excess_coefficient_idxs = parser.parseN(num_excess_coeffs, int)
     header = Header(list_soln_species_count, num_stoich_phases, pure_elements, pure_elements_mass, gibbs_coefficient_idxs, excess_coefficient_idxs)
     return header
 
 
-def parse_interval(toks: deque, num_gibbs_coeffs, has_additional_terms):
-    temperature = parse(toks, float)
-    coefficients = parseN(toks, num_gibbs_coeffs, float)
+def parse_interval(parser: TokenParser, num_gibbs_coeffs, has_additional_terms):
+    temperature = parser.parse(float)
+    coefficients = parser.parseN(num_gibbs_coeffs, float)
     if has_additional_terms:
-        num_additional_terms = parse(toks, int)
-        additional_coeff_pairs = [AdditionalCoefficientPair(*parseN(toks, 2, float)) for _ in range(num_additional_terms)]
+        num_additional_terms = parser.parse(int)
+        additional_coeff_pairs = [AdditionalCoefficientPair(*parser.parseN(2, float)) for _ in range(num_additional_terms)]
     else:
         additional_coeff_pairs = []
     return Interval(temperature, coefficients, additional_coeff_pairs)
 
 
-def parse_endmember(toks: deque, num_pure_elements, num_gibbs_coeffs):
-    species_name = parse(toks, str)
-    gibbs_eq_type = parse(toks, int)
+def parse_endmember(parser: TokenParser, num_pure_elements, num_gibbs_coeffs):
+    species_name = parser.parse(str)
+    gibbs_eq_type = parser.parse(int)
     has_additional_terms = gibbs_eq_type in (4,)
-    num_intervals = parse(toks, int)
-    stoichiometry_pure_elements = parseN(toks, num_pure_elements, float)
-    intervals = [parse_interval(toks, num_gibbs_coeffs, has_additional_terms) for _ in range(num_intervals)]
+    num_intervals = parser.parse(int)
+    stoichiometry_pure_elements = parser.parseN(num_pure_elements, float)
+    intervals = [parse_interval(parser, num_gibbs_coeffs, has_additional_terms) for _ in range(num_intervals)]
     return Endmember(species_name, gibbs_eq_type, stoichiometry_pure_elements, intervals)
 
 
