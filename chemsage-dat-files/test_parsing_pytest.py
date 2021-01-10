@@ -283,6 +283,7 @@ SUBQ_Viitala = """ Liquidsoln
    0
 """
 
+
 def test_parse_subq_phase():
     toks = tokenize(SUBQ_Viitala)
     phase_subq = parse_phase(toks, 8, 6)
@@ -290,6 +291,7 @@ def test_parse_subq_phase():
     for em in phase_subq.endmembers:
         assert len(em.stoichiometry_quadruplet) == 5
         assert np.isclose(em.coordination, 2.4)
+    assert phase_subq.num_quadruplets == 6
     assert phase_subq.num_subl_1_const == 6
     assert phase_subq.num_subl_2_const == 1
     assert phase_subq.subl_1_const == ['Cu', 'Zn', 'Fe', 'Cu', 'Fe', 'Pb']
@@ -298,3 +300,6 @@ def test_parse_subq_phase():
     assert phase_subq.subl_2_chemical_groups == [1]
     assert np.allclose(phase_subq.subl_1_charges, [1.0, 2.0, 3.0, 2.0, 2.0, 2.0])
     assert np.allclose(phase_subq.subl_2_charges, [1.0])
+    assert phase_subq.subl_const_idx_pairs == [(1, 1), (2, 1), (3, 1), (5, 1), (4, 1), (6, 1)]
+    assert len(phase_subq.quadruplets) == phase_subq.num_quadruplets
+    assert phase_subq.quadruplets[2] == Quadruplet([3, 3, 7, 7], [6.0, 6.0, 2.0, 2.0])

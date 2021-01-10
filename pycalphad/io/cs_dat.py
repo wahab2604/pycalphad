@@ -39,6 +39,12 @@ Interval = namedtuple('Interval', ('temperature', 'coefficients', 'additional_co
 
 
 @dataclass
+class Quadruplet:
+    quadruplet_idxs: [int]  # exactly four
+    quadruplet_coordinations: [float]  # exactly four
+
+
+@dataclass
 class Endmember:
     species_name: str
     gibbs_eq_type: str
@@ -71,6 +77,8 @@ class Phase_SUBQ(_Phase):
     subl_1_chemical_groups: [int]
     subl_2_charges: [float]
     subl_2_chemical_groups: [int]
+    subl_const_idx_pairs: [(int,)]
+    quadruplets: [Quadruplet]
 
 
 def tokenize(instring, startline=0):
@@ -134,8 +142,17 @@ def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_
     subl_1_chemical_groups = toks.parseN(num_subl_1_const, int)
     subl_2_charges = toks.parseN(num_subl_2_const, float)
     subl_2_chemical_groups = toks.parseN(num_subl_2_const, int)
+    # TODO: not exactly sure my math is right on how many pairs, but I think it should be cations*anions
+    subl_1_pair_idx = toks.parseN(num_subl_1_const*num_subl_2_const, int)
+    subl_2_pair_idx = toks.parseN(num_subl_1_const*num_subl_2_const, int)
+    subl_const_idx_pairs = [(s1i, s2i) for s1i, s2i in zip(subl_1_pair_idx, subl_2_pair_idx)]
 
-    return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const, subl_1_const, subl_2_const, subl_1_charges, subl_1_chemical_groups, subl_2_charges, subl_2_chemical_groups)
+    quadruplets = []
+    for _ in range(num_quadruplets):
+        quad_idx = toks.parseN(4, int)
+        quad_coords = toks.parseN(4, float)
+        quadruplets.append(Quadruplet(quad_idx, quad_coords))
+    return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const, subl_1_const, subl_2_const, subl_1_charges, subl_1_chemical_groups, subl_2_charges, subl_2_chemical_groups, subl_const_idx_pairs, quadruplets)
 
 
 def parse_phase(toks, num_pure_elements, num_gibbs_coeffs):
