@@ -2,8 +2,6 @@
 import pytest
 
 import numpy as np
-import pyparsing
-pyparsing.ParserElement.enablePackrat(0)
 from pycalphad.io.cs_dat import *
 # The number of solution phases here EXCLUDES gas phase if it's not present
 # (i.e. the num_soln_phases here may be one less than line 2)
@@ -87,7 +85,7 @@ header_data = [
 def test_header_parsing(fn, num_soln_phases, num_stoich_phases, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs):
     with open(fn) as fp:
         lines = fp.read()
-    out, toks = parse_header(tokenize(lines, 1))
+    out = parse_header(tokenize(lines, 1))
     print(out)
     print(repr(out))
     assert len(out.list_soln_species_count) == num_soln_phases
@@ -117,7 +115,7 @@ def test_parse_viitala_header():
     """
     alltoks = tokenize(HEADER, 1)
     print(alltoks)
-    out, toks = parse_header(alltoks)
+    out = parse_header(alltoks)
     print(out)
     assert len(out.list_soln_species_count) == 5
     assert out.list_soln_species_count == [0, 21, 3, 4, 3]
@@ -132,16 +130,16 @@ def test_parse_viitala_header():
 
 
 def test_parse_endmember():
-    ENDMEMBER_1 = """ CuCl
+    ENDMEMBER_1 = tokenize(""" CuCl
    1  1    0.0    0.0    1.0    0.0    1.0    0.0    0.0    0.0
   3000.0000     -151122.87      354.57317     -66.944000         0.00000000
      0.00000000     0.00000000
-    """
-    out = grammar_endmember(8, 6).parseString(ENDMEMBER_1)
+    """)
+    out = parse_endmember(ENDMEMBER_1, 8, 6)
     print(repr(out))
     print('------')
     print(out)
-    assert out.name == 'CuCl'
+    assert out.species_name == 'CuCl'
     assert out.gibbs_eq_type == 1
     assert len(out.stoichiometry_pure_elements) == 8
     assert len(out.intervals) == 1
@@ -149,7 +147,7 @@ def test_parse_endmember():
     assert len(out.intervals[0].coefficients) == 6
     assert len(out.intervals[0].additional_coeff_pairs) == 0
 
-    ENDMEMBER_2 = """ FeCl3
+    ENDMEMBER_2 = tokenize(""" FeCl3
    4  3    0.0    0.0    0.0    1.0    3.0    0.0    0.0    0.0
   577.00000     -1419517.7      30687.563     -3436.4600     0.62998063
      0.00000000     0.00000000
@@ -160,13 +158,12 @@ def test_parse_endmember():
   6000.0000     -370906.17      349.95802     -83.000000         0.00000000
      0.00000000     0.00000000
  1     0.00000000   0.00
-
-    """
-    out = grammar_endmember(8, 6).parseString(ENDMEMBER_2)
+    """)
+    out = parse_endmember(ENDMEMBER_2, 8, 6)
     print(repr(out))
     print('------')
     print(out)
-    assert out.name == 'FeCl3'
+    assert out.species_name == 'FeCl3'
     assert out.gibbs_eq_type == 4
     assert len(out.stoichiometry_pure_elements) == 8
     assert len(out.intervals) == 3
