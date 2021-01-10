@@ -220,11 +220,11 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
     phase_type = toks.parse(str)
     if phase_type == 'SUBQ':
         phase = parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs)
-    elif phase_type == 'SUBG':
-        raise NotImplementedError("SUBG not yet supported")
-    if phase_type in ('IDMX', 'SUBL', 'RKMP'):
+    elif phase_type in ('IDMX', 'SUBL', 'RKMP'):
         # all these phases parse the same
         phase = parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const)
+    else:
+        raise NotImplementedError(f"phase type {phase_type} not yet supported")
     return phase
 
 
