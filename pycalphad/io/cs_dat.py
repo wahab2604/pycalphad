@@ -130,6 +130,12 @@ def parse_endmember_subq(toks: TokenParser, num_pure_elements, num_gibbs_coeffs)
     return EndmemberSUBQ(em.species_name, em.gibbs_eq_type, em.stoichiometry_pure_elements, em.intervals, stoichiometry_quadruplet, coordination)
 
 
+def parse_quadruplet(toks):
+    quad_idx = toks.parseN(4, int)
+    quad_coords = toks.parseN(4, float)
+    return Quadruplet(quad_idx, quad_coords)
+
+
 def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs):
     num_pairs = toks.parse(int)
     num_quadruplets = toks.parse(int)
@@ -146,12 +152,7 @@ def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_
     subl_1_pair_idx = toks.parseN(num_subl_1_const*num_subl_2_const, int)
     subl_2_pair_idx = toks.parseN(num_subl_1_const*num_subl_2_const, int)
     subl_const_idx_pairs = [(s1i, s2i) for s1i, s2i in zip(subl_1_pair_idx, subl_2_pair_idx)]
-
-    quadruplets = []
-    for _ in range(num_quadruplets):
-        quad_idx = toks.parseN(4, int)
-        quad_coords = toks.parseN(4, float)
-        quadruplets.append(Quadruplet(quad_idx, quad_coords))
+    quadruplets = [parse_quadruplet(toks) for _ in range(num_quadruplets)]
     return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const, subl_1_const, subl_2_const, subl_1_charges, subl_1_chemical_groups, subl_2_charges, subl_2_chemical_groups, subl_const_idx_pairs, quadruplets)
 
 
