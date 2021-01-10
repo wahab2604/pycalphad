@@ -13,6 +13,7 @@ Careful of a gotcha:  `obj.setParseAction` modifies the object in place but call
 
 """
 
+import numpy as np
 from dataclasses import dataclass
 from pycalphad import Database
 from collections import namedtuple, deque
@@ -118,6 +119,7 @@ class Phase_Aqueous(_Phase):
 
 @dataclass
 class Phase_CEF(_Phase):
+    subl_ratios: [float]
     excess_parameters: [ExcessCEF]
 
 
@@ -262,12 +264,30 @@ def parse_excess_parameters(toks, num_excess_coeffs):
 
 def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     endmembers = [parse_endmember(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_const)]
-    if phase_type in ('IDMX'):
+    if phase_type in ('IDMX',):
+        subl_ratios = [1.0]
         # No excess parameters
         excess_parameters = []
-    else:
+    elif phase_type in ('SUBL',):
+        num_subl = toks.parse(int)
+        num_atoms = float(phase_name.split(':')[1])
+        subl_atom_fracs = toks.parseN(num_subl, float)
+        subl_ratios = [num_atoms*subl_frac for subl_frac in subl_atom_fracs]
+        # read the data used to recover the mass, it's redundant and doesn't need to be stored
+        subl_constituents = toks.parseN(num_subl, int)
+        num_species = sum(subl_constituents)
+        _ = toks.parseN(num_species, str)
+        num_endmembers = int(np.prod(subl_constituents))
+        for _ in range(num_subl):
+            _ = toks.parseN(num_endmembers, int)
+        # final zero to close off the block
+        assert toks.parse(int) == 0
+        # No excess parameters
+        excess_parameters = []
+    elif phase_type in ('RKMP',):
+        subl_ratios = [1.0]
         excess_parameters = parse_excess_parameters(toks, num_excess_coeffs)
-    return Phase_CEF(phase_name, phase_type, endmembers, excess_parameters)
+    return Phase_CEF(phase_name, phase_type, endmembers, subl_ratios, excess_parameters)
 
 
 def parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const):
@@ -298,7 +318,7 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
         phase = parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
     elif phase_type == 'IDWZ':
         phase = parse_phase_aqueous(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
-    elif phase_type in ('IDMX', 'SUBL', 'RKMP'):
+    elif phase_type in ('IDMX', 'RKMP', 'SUBL'):
         # all these phases parse the same
         phase = parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const)
     else:
