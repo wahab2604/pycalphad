@@ -263,15 +263,20 @@ def parse_excess_parameters(toks, num_excess_coeffs):
 
 
 def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
+    if phase_type in ('SUBLM',):
+        # ignore first two numbers, these don't seem to be meaningful and always come in 2 regardless of # of sublattices
+        toks.parseN(2, float)
     endmembers = [parse_endmember(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_const)]
-    if phase_type in ('IDMX',):
-        subl_ratios = [1.0]
-        # No excess parameters
-        excess_parameters = []
-    elif phase_type in ('SUBL',):
+
+    # defining sublattice model
+    if phase_type in ('SUBL', 'SUBLM'):
         num_subl = toks.parse(int)
-        num_atoms = float(phase_name.split(':')[1])
         subl_atom_fracs = toks.parseN(num_subl, float)
+        # some phases have number of atoms after a colon in the phase name, e.g. SIGMA:30
+        if len(phase_name.split(':')) > 1:
+            num_atoms = float(phase_name.split(':')[1])
+        else:
+            num_atoms = 1.0
         subl_ratios = [num_atoms*subl_frac for subl_frac in subl_atom_fracs]
         # read the data used to recover the mass, it's redundant and doesn't need to be stored
         subl_constituents = toks.parseN(num_subl, int)
@@ -280,12 +285,17 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
         num_endmembers = int(np.prod(subl_constituents))
         for _ in range(num_subl):
             _ = toks.parseN(num_endmembers, int)
-        # final zero to close off the block
-        assert toks.parse(int) == 0
+    elif phase_type in ('IDMX', 'RKMP'):
+        subl_ratios = [1.0]
+    else:
+        raise NotImplemented(f"Phase type {phase_type} does not have method defined for determing the sublattice ratios")
+
+    # excess terms
+    if phase_type in ('IDMX',):
         # No excess parameters
         excess_parameters = []
-    elif phase_type in ('RKMP',):
-        subl_ratios = [1.0]
+    elif phase_type in ('RKMP', 'SUBLM', 'SUBL'):
+        # SUBL will have no excess parameters, but it will have the "0" terminator like it has excess parameters
         excess_parameters = parse_excess_parameters(toks, num_excess_coeffs)
     return Phase_CEF(phase_name, phase_type, endmembers, subl_ratios, excess_parameters)
 
@@ -318,7 +328,7 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
         phase = parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
     elif phase_type == 'IDWZ':
         phase = parse_phase_aqueous(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
-    elif phase_type in ('IDMX', 'RKMP', 'SUBL'):
+    elif phase_type in ('IDMX', 'RKMP', 'SUBL', 'SUBLM'):
         # all these phases parse the same
         phase = parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const)
     else:
