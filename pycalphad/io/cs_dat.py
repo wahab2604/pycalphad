@@ -51,7 +51,8 @@ class ExcessQuadruplet:
     mixing_const: [int]  # exactly four
     mixing_exponents: [int]  # exactly four
     junk: [float]  # exactly twelve
-    additional_mixing_const: [int]  # exactly two
+    additional_mixing_const: int
+    additional_mixing_exponent: int
     excess_coeffs: [float]
 
 
@@ -152,9 +153,10 @@ def parse_subq_excess(toks, mixing_type, num_excess_coeffs):
     mixing_const = toks.parseN(4, int)
     mixing_exponents = toks.parseN(4, int)
     junk = toks.parseN(12, float)
-    additional_mixing_const = toks.parseN(2, int)
+    additional_mixing_const = toks.parse(int)
+    additional_mixing_exponent = toks.parse(float)
     excess_coeffs = toks.parseN(num_excess_coeffs, float)
-    return ExcessQuadruplet(mixing_type, mixing_code, mixing_const, mixing_exponents, junk, additional_mixing_const, excess_coeffs)
+    return ExcessQuadruplet(mixing_type, mixing_code, mixing_const, mixing_exponents, junk, additional_mixing_const, additional_mixing_exponent, excess_coeffs)
 
 
 def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs):
@@ -184,12 +186,17 @@ def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_
     return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const, subl_1_const, subl_2_const, subl_1_charges, subl_1_chemical_groups, subl_2_charges, subl_2_chemical_groups, subl_const_idx_pairs, quadruplets, excess_parameters)
 
 
-def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs):
+def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     """Dispatches to the correct parser depending on the phase type"""
     phase_name = toks.parse(str)
     phase_type = toks.parse(str)
     if phase_type == 'SUBQ':
         phase = parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs)
+    elif phase_type == 'SUBG':
+        raise NotImplementedError("SUBG not yet supported")
+    if phase_type in ('IDMX', 'SUBL', 'RKMP'):
+        # all these phases parse the same
+        raise NotImplementedError("IDMX, SUBL, RKMP not yet supported")
     return phase
 
 

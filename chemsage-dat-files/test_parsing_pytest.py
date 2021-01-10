@@ -286,7 +286,8 @@ SUBQ_Viitala = """ Liquidsoln
 
 def test_parse_subq_phase():
     toks = tokenize(SUBQ_Viitala)
-    phase_subq = parse_phase(toks, 8, 6, 6)
+    # number of constituents (last number) doesn't matter for SUBQ
+    phase_subq = parse_phase(toks, 8, 6, 6, 0)
     assert len(toks) == 0  # completed parsing
     assert len(phase_subq.endmembers) == 6
     for em in phase_subq.endmembers:
