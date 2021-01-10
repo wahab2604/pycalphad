@@ -47,8 +47,8 @@ class Endmember:
 
 
 @dataclass
-class EndmemberSUBQ:
-    stoichiometry_pairs: [float]
+class EndmemberSUBQ(Endmember):
+    stoichiometry_quadruplet: [float]
     coordination: float
 
 
@@ -63,7 +63,7 @@ class _Phase:
 class Phase_SUBQ(_Phase):
     num_pairs: int
     num_quadruplets: int
-    num_subl_1_consts: int
+    num_subl_1_const: int
     num_subl_2_const: int
 
 
@@ -114,6 +114,25 @@ def parse_endmember_subq(toks: TokenParser, num_pure_elements, num_gibbs_coeffs)
     stoichiometry_quadruplet = toks.parseN(5, float)
     coordination = toks.parse(float)
     return EndmemberSUBQ(em.species_name, em.gibbs_eq_type, em.stoichiometry_pure_elements, em.intervals, stoichiometry_quadruplet, coordination)
+
+
+def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs):
+    num_pairs = toks.parse(int)
+    num_quadruplets = toks.parse(int)
+    endmembers = [parse_endmember_subq(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_pairs)]
+    num_subl_1_const = toks.parse(int)
+    num_subl_2_const = toks.parse(int)
+
+    return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const)
+
+
+def parse_phase(toks, num_pure_elements, num_gibbs_coeffs):
+    """Dispatches to the correct parser depending on the phase type"""
+    phase_name = toks.parse(str)
+    phase_type = toks.parse(str)
+    if phase_type == 'SUBQ':
+        phase = parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, )
+    return phase
 
 
 def parse_cs_dat(instring):
