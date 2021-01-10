@@ -71,40 +71,49 @@ def tokenize(instring, startline=0):
     return TokenParser('\n'.join(instring.splitlines()[startline:]).split())
 
 
-def parse_header(parser: TokenParser):
-    num_pure_elements = parser.parse(int)
-    num_soln_phases = parser.parse(int)
-    list_soln_species_count = parser.parseN(num_soln_phases, int)
-    num_stoich_phases = parser.parse(int)
-    pure_elements = parser.parseN(num_pure_elements, str)
-    pure_elements_mass = parser.parseN(num_pure_elements, float)
-    num_gibbs_coeffs = parser.parse(int)
-    gibbs_coefficient_idxs = parser.parseN(num_gibbs_coeffs, int)
-    num_excess_coeffs = parser.parse(int)
-    excess_coefficient_idxs = parser.parseN(num_excess_coeffs, int)
+def parse_header(toks: TokenParser):
+    num_pure_elements = toks.parse(int)
+    num_soln_phases = toks.parse(int)
+    list_soln_species_count = toks.parseN(num_soln_phases, int)
+    num_stoich_phases = toks.parse(int)
+    pure_elements = toks.parseN(num_pure_elements, str)
+    pure_elements_mass = toks.parseN(num_pure_elements, float)
+    num_gibbs_coeffs = toks.parse(int)
+    gibbs_coefficient_idxs = toks.parseN(num_gibbs_coeffs, int)
+    num_excess_coeffs = toks.parse(int)
+    excess_coefficient_idxs = toks.parseN(num_excess_coeffs, int)
     header = Header(list_soln_species_count, num_stoich_phases, pure_elements, pure_elements_mass, gibbs_coefficient_idxs, excess_coefficient_idxs)
     return header
 
 
-def parse_interval(parser: TokenParser, num_gibbs_coeffs, has_additional_terms):
-    temperature = parser.parse(float)
-    coefficients = parser.parseN(num_gibbs_coeffs, float)
+def parse_interval(toks: TokenParser, num_gibbs_coeffs, has_additional_terms):
+    temperature = toks.parse(float)
+    coefficients = toks.parseN(num_gibbs_coeffs, float)
     if has_additional_terms:
-        num_additional_terms = parser.parse(int)
-        additional_coeff_pairs = [AdditionalCoefficientPair(*parser.parseN(2, float)) for _ in range(num_additional_terms)]
+        num_additional_terms = toks.parse(int)
+        additional_coeff_pairs = [AdditionalCoefficientPair(*toks.parseN(2, float)) for _ in range(num_additional_terms)]
     else:
         additional_coeff_pairs = []
     return Interval(temperature, coefficients, additional_coeff_pairs)
 
 
-def parse_endmember(parser: TokenParser, num_pure_elements, num_gibbs_coeffs):
-    species_name = parser.parse(str)
-    gibbs_eq_type = parser.parse(int)
+def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
+    species_name = toks.parse(str)
+    gibbs_eq_type = toks.parse(int)
     has_additional_terms = gibbs_eq_type in (4,)
-    num_intervals = parser.parse(int)
-    stoichiometry_pure_elements = parser.parseN(num_pure_elements, float)
-    intervals = [parse_interval(parser, num_gibbs_coeffs, has_additional_terms) for _ in range(num_intervals)]
+    num_intervals = toks.parse(int)
+    stoichiometry_pure_elements = toks.parseN(num_pure_elements, float)
+    intervals = [parse_interval(toks, num_gibbs_coeffs, has_additional_terms) for _ in range(num_intervals)]
     return Endmember(species_name, gibbs_eq_type, stoichiometry_pure_elements, intervals)
+
+
+def parse_endmember_subq(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
+    em = parse_endmember(toks, num_pure_elements, num_gibbs_coeffs)
+    # TODO: is 5 correct? I only have two SUBQ/SUBG databases and they seem equivalent
+    # I think the first four are the actual stoichiometries of each element in the quadruplet, but I'm unclear.
+    stoichiometry_quadruplet = toks.parseN(5, float)
+    coordination = toks.parse(float)
+    return EndmemberSUBQ(em.species_name, em.gibbs_eq_type, em.stoichiometry_pure_elements, em.intervals, stoichiometry_quadruplet, coordination)
 
 
 def parse_cs_dat(instring):
