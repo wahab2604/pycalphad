@@ -148,10 +148,15 @@ def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
         _ = toks.parse(str)
     gibbs_eq_type = toks.parse(int)
     has_magnetic = gibbs_eq_type > 12
-    has_additional_terms = ((gibbs_eq_type - 12) if has_magnetic else gibbs_eq_type) in (4,)
+    gibbs_eq_type_reduced = (gibbs_eq_type - 12) if has_magnetic else gibbs_eq_type
+    has_additional_terms = gibbs_eq_type_reduced in (4,)
+    if gibbs_eq_type_reduced not in (1, 4,) or has_magnetic:
+        raise ValueError(f"Gibbs equation type {gibbs_eq_type} is not yet supported.")
     num_intervals = toks.parse(int)
     stoichiometry_pure_elements = toks.parseN(num_pure_elements, float)
     intervals = [parse_interval(toks, num_gibbs_coeffs, has_additional_terms) for _ in range(num_intervals)]
+    # TODO: magnetic terms
+    # solution phase: 4 floats, stoichiometric: 2 floats
     return Endmember(species_name, gibbs_eq_type, stoichiometry_pure_elements, intervals)
 
 
@@ -210,7 +215,7 @@ def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_
 
 def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     endmembers = [parse_endmember(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_const)]
-    excess_parameters = []
+    excess_parameters = []  # TODO: implement excess parameters
     return Phase_CEF(phase_name, phase_type, endmembers, excess_parameters)
 
 
