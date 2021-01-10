@@ -65,6 +65,12 @@ class Phase_SUBQ(_Phase):
     num_quadruplets: int
     num_subl_1_const: int
     num_subl_2_const: int
+    subl_1_const: [str]
+    subl_2_const: [str]
+    subl_1_charges: [float]
+    subl_1_chemical_groups: [int]
+    subl_2_charges: [float]
+    subl_2_chemical_groups: [int]
 
 
 def tokenize(instring, startline=0):
@@ -122,8 +128,14 @@ def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_
     endmembers = [parse_endmember_subq(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_pairs)]
     num_subl_1_const = toks.parse(int)
     num_subl_2_const = toks.parse(int)
+    subl_1_const = toks.parseN(num_subl_1_const, str)
+    subl_2_const = toks.parseN(num_subl_2_const, str)
+    subl_1_charges = toks.parseN(num_subl_1_const, float)
+    subl_1_chemical_groups = toks.parseN(num_subl_1_const, int)
+    subl_2_charges = toks.parseN(num_subl_2_const, float)
+    subl_2_chemical_groups = toks.parseN(num_subl_2_const, int)
 
-    return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const)
+    return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const, subl_1_const, subl_2_const, subl_1_charges, subl_1_chemical_groups, subl_2_charges, subl_2_chemical_groups)
 
 
 def parse_phase(toks, num_pure_elements, num_gibbs_coeffs):

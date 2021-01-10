@@ -283,7 +283,7 @@ SUBQ_Viitala = """ Liquidsoln
    0
 """
 
-def test_parse_subq_endmembers():
+def test_parse_subq_phase():
     toks = tokenize(SUBQ_Viitala)
     phase_subq = parse_phase(toks, 8, 6)
     assert len(phase_subq.endmembers) == 6
@@ -292,3 +292,9 @@ def test_parse_subq_endmembers():
         assert np.isclose(em.coordination, 2.4)
     assert phase_subq.num_subl_1_const == 6
     assert phase_subq.num_subl_2_const == 1
+    assert phase_subq.subl_1_const == ['Cu', 'Zn', 'Fe', 'Cu', 'Fe', 'Pb']
+    assert phase_subq.subl_2_const == ['Cl']
+    assert phase_subq.subl_1_chemical_groups == [1, 1, 1, 1, 1, 1]
+    assert phase_subq.subl_2_chemical_groups == [1]
+    assert np.allclose(phase_subq.subl_1_charges, [1.0, 2.0, 3.0, 2.0, 2.0, 2.0])
+    assert np.allclose(phase_subq.subl_2_charges, [1.0])
