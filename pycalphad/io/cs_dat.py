@@ -83,6 +83,13 @@ class _Phase:
 
 
 @dataclass
+class Phase_Stoichiometric:
+    phase_name: str
+    phase_type: str
+    endmembers: [Endmember]  # exactly one
+
+
+@dataclass
 class Phase_CEF(_Phase):
     excess_parameters: [ExcessCEF]
 
@@ -216,6 +223,12 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
         # all these phases parse the same
         phase = parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const)
     return phase
+
+
+def parse_stoich_phase(toks, num_pure_elements, num_gibbs_coeffs):
+    endmember = parse_endmember(toks, num_pure_elements, num_gibbs_coeffs)
+    phase_name = endmember.species_name
+    return Phase_Stoichiometric(phase_name, None, [endmember])
 
 
 def parse_cs_dat(instring):

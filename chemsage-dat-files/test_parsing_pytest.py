@@ -458,3 +458,23 @@ def test_parse_idmx():
     assert phase_cef.endmembers[-1].species_name == 'C3O2'
     assert np.allclose(phase_cef.endmembers[-1].stoichiometry_pure_elements, [2.0, 3.0])
     assert len(toks) == 0  # completion
+
+
+STOICH_C_diamond = """ C_diamond(s2)
+   4  2    0.0    1.0
+  3000.0000      30879.186      209.52835     -28.008000     -.21380000E-03
+ 0.00000000     -155590.00
+ 1 -7729.5000      99.00
+  3001.0000     -17678.685      194.34620     -26.748876     0.00000000
+ 0.00000000     0.00000000
+ 1 0.00000000       0.00
+"""
+
+
+def test_parse_stoich_phase():
+    toks = tokenize(STOICH_C_diamond)
+    phase_stoich = parse_stoich_phase(toks, 2, 6)
+    assert phase_stoich.phase_name == 'C_diamond(s2)'
+    assert len(phase_stoich.endmembers) == 1
+    assert len(phase_stoich.endmembers[0].intervals) == 2
+    assert len(toks) == 0  # completion
