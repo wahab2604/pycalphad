@@ -45,6 +45,17 @@ class Quadruplet:
 
 
 @dataclass
+class ExcessQuadruplet:
+    mixing_type: int
+    mixing_code: str
+    mixing_const: [int]  # exactly four
+    mixing_exponents: [int]  # exactly four
+    junk: [float]  # exactly twelve
+    additional_mixing_const: [int]  # exactly two
+    excess_coeffs: [float]
+
+
+@dataclass
 class Endmember:
     species_name: str
     gibbs_eq_type: str
@@ -79,6 +90,7 @@ class Phase_SUBQ(_Phase):
     subl_2_chemical_groups: [int]
     subl_const_idx_pairs: [(int,)]
     quadruplets: [Quadruplet]
+    excess_parameters: [ExcessQuadruplet]
 
 
 def tokenize(instring, startline=0):
@@ -135,8 +147,17 @@ def parse_quadruplet(toks):
     quad_coords = toks.parseN(4, float)
     return Quadruplet(quad_idx, quad_coords)
 
+def parse_subq_excess(toks, mixing_type, num_excess_coeffs):
+    mixing_code = toks.parse(str)
+    mixing_const = toks.parseN(4, int)
+    mixing_exponents = toks.parseN(4, int)
+    junk = toks.parseN(12, float)
+    additional_mixing_const = toks.parseN(2, int)
+    excess_coeffs = toks.parseN(num_excess_coeffs, float)
+    return ExcessQuadruplet(mixing_type, mixing_code, mixing_const, mixing_exponents, junk, additional_mixing_const, excess_coeffs)
 
-def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs):
+
+def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs):
     num_pairs = toks.parse(int)
     num_quadruplets = toks.parse(int)
     endmembers = [parse_endmember_subq(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_pairs)]
@@ -153,15 +174,22 @@ def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_
     subl_2_pair_idx = toks.parseN(num_subl_1_const*num_subl_2_const, int)
     subl_const_idx_pairs = [(s1i, s2i) for s1i, s2i in zip(subl_1_pair_idx, subl_2_pair_idx)]
     quadruplets = [parse_quadruplet(toks) for _ in range(num_quadruplets)]
-    return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const, subl_1_const, subl_2_const, subl_1_charges, subl_1_chemical_groups, subl_2_charges, subl_2_chemical_groups, subl_const_idx_pairs, quadruplets)
+    excess_parameters = []
+    while True:
+        mixing_type = toks.parse(int)
+        if mixing_type == 0:
+            break
+        excess_parameters.append(parse_subq_excess(toks, mixing_type, num_excess_coeffs))
+
+    return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const, subl_1_const, subl_2_const, subl_1_charges, subl_1_chemical_groups, subl_2_charges, subl_2_chemical_groups, subl_const_idx_pairs, quadruplets, excess_parameters)
 
 
-def parse_phase(toks, num_pure_elements, num_gibbs_coeffs):
+def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs):
     """Dispatches to the correct parser depending on the phase type"""
     phase_name = toks.parse(str)
     phase_type = toks.parse(str)
     if phase_type == 'SUBQ':
-        phase = parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, )
+        phase = parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs)
     return phase
 
 

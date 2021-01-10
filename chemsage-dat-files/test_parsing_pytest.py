@@ -286,7 +286,8 @@ SUBQ_Viitala = """ Liquidsoln
 
 def test_parse_subq_phase():
     toks = tokenize(SUBQ_Viitala)
-    phase_subq = parse_phase(toks, 8, 6)
+    phase_subq = parse_phase(toks, 8, 6, 6)
+    assert len(toks) == 0  # completed parsing
     assert len(phase_subq.endmembers) == 6
     for em in phase_subq.endmembers:
         assert len(em.stoichiometry_quadruplet) == 5
@@ -303,3 +304,7 @@ def test_parse_subq_phase():
     assert phase_subq.subl_const_idx_pairs == [(1, 1), (2, 1), (3, 1), (5, 1), (4, 1), (6, 1)]
     assert len(phase_subq.quadruplets) == phase_subq.num_quadruplets
     assert phase_subq.quadruplets[2] == Quadruplet([3, 3, 7, 7], [6.0, 6.0, 2.0, 2.0])
+    num_excess_G = len([x for x in phase_subq.excess_parameters if x.mixing_code == 'G'])
+    assert num_excess_G == 10
+    num_excess_Q = len([x for x in phase_subq.excess_parameters if x.mixing_code == 'Q'])
+    assert num_excess_Q == 3
