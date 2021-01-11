@@ -478,7 +478,6 @@ def test_parse_stoich_phase():
     assert len(toks) == 0  # completion
 
 
-
 # determining tokens remaining:
 # def remtoks(filename):
 #     with open(filename) as fp:
@@ -487,16 +486,17 @@ def test_parse_stoich_phase():
 #     idxs = [i for i, x in enumerate(toks) if x.startswith('##')]
 #     print(len(toks) - idxs[0] if len(idxs) > 0 else 0)
 
+
 full_parses = [
     # filename, num_soln_phases, num_stoich_phases, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs
 
     # Data files from FACT documentation
     # See https://gtt-technologies.de/software/chemapp/documentation/online-manual/
     ("Pb-Sn.dat", 90),
-    pytest.param("C-N-O.dat", 66),  # Uses Gibbs equation type 7
-    pytest.param("C-O-Si.dat", 113),  # Uses Gibbs equation type 7
+    ("C-N-O.dat", 66),
+    ("C-O-Si.dat", 113),
     ("Fe-C.dat", 308),
-    pytest.param("Fe2SiO4-Mg2SiO4.dat", 142, marks=pytest.mark.xfail),  # Uses Gibbs equation type 12
+    ("Fe2SiO4-Mg2SiO4.dat", 142),
     ("O-H-EA.dat", 102),
     ("Pitzer.dat", 94),
     ("subl-ex.dat", 181),
@@ -514,7 +514,6 @@ full_parses = [
     # Data files from publications
     ("CuZnFeCl-Viitala (1).dat", 0),
 ]
-
 
 
 @pytest.mark.parametrize("filename, remaining_toks", full_parses)
