@@ -66,6 +66,12 @@ class Endmember:
 
 
 @dataclass
+class EndmemberMagnetic(Endmember):
+    curie_temperature: float
+    magnetic_moment: float
+
+
+@dataclass
 class EndmemberRealGas(Endmember):
     # Tsonopoulos data
     Tc: float
@@ -170,7 +176,7 @@ def parse_interval(toks: TokenParser, num_gibbs_coeffs, has_additional_terms) ->
     return Interval(temperature, coefficients, additional_coeff_pairs)
 
 
-def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
+def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs, is_stoichiometric=False):
     species_name = toks.parse(str)
     if toks[0] == '#':
         # special case for stoichiometric phases, this is a dummy species, skip it
@@ -180,13 +186,25 @@ def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
     gibbs_eq_type_reduced = (gibbs_eq_type - 12) if has_magnetic else gibbs_eq_type
     has_additional_terms = gibbs_eq_type_reduced in (4,)
     # TODO: type 7 is H298, S298, 4 cp coefficients, if there's >1 term, then there's a delta H after each interval except the last
-    if gibbs_eq_type_reduced not in (1, 4,) or has_magnetic:
+    if gibbs_eq_type_reduced not in (1, 4,):
         raise ValueError(f"Gibbs equation type {gibbs_eq_type} is not yet supported.")
     num_intervals = toks.parse(int)
     stoichiometry_pure_elements = toks.parseN(num_pure_elements, float)
     intervals = [parse_interval(toks, num_gibbs_coeffs, has_additional_terms) for _ in range(num_intervals)]
     # TODO: magnetic terms
     # solution phase: 4 floats, stoichiometric: 2 floats
+    # magnetic comes after all the intervals
+    curie_temperature = None
+    magnetic_moment = None
+    if has_magnetic:
+        curie_temperature = toks.parse(float)
+        magnetic_moment = toks.parse(float)
+        if is_stoichiometric:
+            # two more terms
+            # TODO: not clear what these are for, throwing them out for now.
+            toks.parse(float)
+            toks.parse(float)
+        return EndmemberMagnetic(species_name, gibbs_eq_type, stoichiometry_pure_elements, intervals, curie_temperature, magnetic_moment)
     return Endmember(species_name, gibbs_eq_type, stoichiometry_pure_elements, intervals)
 
 
@@ -243,6 +261,10 @@ def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_
     while True:
         mixing_type = toks.parse(int)
         if mixing_type == 0:
+            break
+        elif mixing_type == -9:
+            # some garbage, like 1 2 3K 1 2K 1 3K 2 3 6, 90 of them
+            toks.parseN(90, str)
             break
         excess_parameters.append(parse_subq_excess(toks, mixing_type, num_excess_coeffs))
 
@@ -337,7 +359,7 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
 
 
 def parse_stoich_phase(toks, num_pure_elements, num_gibbs_coeffs):
-    endmember = parse_endmember(toks, num_pure_elements, num_gibbs_coeffs)
+    endmember = parse_endmember(toks, num_pure_elements, num_gibbs_coeffs, is_stoichiometric=True)
     phase_name = endmember.species_name
     return Phase_Stoichiometric(phase_name, None, [endmember])
 
