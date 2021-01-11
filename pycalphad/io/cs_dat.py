@@ -100,6 +100,13 @@ class ExcessCEF:
 
 
 @dataclass
+class ExcessCEFMagnetic:
+    interacting_species_idxs: [int]
+    parameter_order: int
+    curie_temperature: float
+    magnetic_moment: float
+
+@dataclass
 class ExcessQKTO:
     interacting_species_idxs: [int]
     interacing_species_type: [int]
@@ -278,6 +285,21 @@ def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_
     return Phase_SUBQ(phase_name, phase_type, endmembers, num_pairs, num_quadruplets, num_subl_1_const, num_subl_2_const, subl_1_const, subl_2_const, subl_1_charges, subl_1_chemical_groups, subl_2_charges, subl_2_chemical_groups, subl_const_idx_pairs, quadruplets, excess_parameters)
 
 
+def parse_excess_magnetic_parameters(toks):
+    excess_terms = []
+    while True:
+        num_interacting_species = toks.parse(int)
+        if num_interacting_species == 0:
+            break
+        interacting_species_idxs = toks.parseN(num_interacting_species, int)
+        num_terms = toks.parse(int)
+        for parameter_order in range(num_terms):
+            curie_temperature = toks.parse(float)
+            magnetic_moment = toks.parse(float)
+            excess_terms.append(ExcessCEFMagnetic(interacting_species_idxs, parameter_order, curie_temperature, magnetic_moment))
+    return excess_terms
+
+
 def parse_excess_parameters(toks, num_excess_coeffs):
     excess_terms = []
     while True:
@@ -305,7 +327,8 @@ def parse_excess_qkto(toks, num_excess_coeffs):
 
 
 def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
-    if phase_type in ('SUBLM',):
+    magnetic_phase_type = len(phase_type) == 5 and phase_type[4] == 'M'
+    if magnetic_phase_type:
         # ignore first two numbers, these don't seem to be meaningful and always come in 2 regardless of # of sublattices
         # TODO: these are magnetic, not garbage
         toks.parseN(2, float)
@@ -335,7 +358,7 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
         num_endmembers = int(np.prod(subl_constituents))
         for _ in range(num_subl):
             _ = toks.parseN(num_endmembers, int)
-    elif phase_type in ('IDMX', 'RKMP', 'QKTO'):
+    elif phase_type in ('IDMX', 'RKMP', 'QKTO', 'RKMPM'):
         subl_ratios = [1.0]
     else:
         raise NotImplemented(f"Phase type {phase_type} does not have method defined for determing the sublattice ratios")
@@ -344,9 +367,12 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
     if phase_type in ('IDMX',):
         # No excess parameters
         excess_parameters = []
-    elif phase_type in ('RKMP', 'SUBLM', 'SUBL'):
-        # SUBL will have no excess parameters, but it will have the "0" terminator like it has excess parameters
-        excess_parameters = parse_excess_parameters(toks, num_excess_coeffs)
+    elif phase_type in ('RKMP', 'SUBLM', 'RKMPM', 'SUBL'):
+        # SUBL will have no excess parameters, but it will have the "0" terminator like it has excess parameters so we can use the excess parameter parsing to process it all the same.
+        excess_parameters = []
+        if magnetic_phase_type:
+            excess_parameters.extend(parse_excess_magnetic_parameters(toks))
+        excess_parameters.extend(parse_excess_parameters(toks, num_excess_coeffs))
     elif phase_type in ('QKTO',):
         excess_parameters = parse_excess_qkto(toks, num_excess_coeffs)
     return Phase_CEF(phase_name, phase_type, endmembers, subl_ratios, excess_parameters)
@@ -380,7 +406,7 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
         phase = parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
     elif phase_type == 'IDWZ':
         phase = parse_phase_aqueous(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
-    elif phase_type in ('IDMX', 'RKMP', 'QKTO', 'SUBL', 'SUBLM'):
+    elif phase_type in ('IDMX', 'RKMP', 'RKMPM', 'QKTO', 'SUBL', 'SUBLM'):
         # all these phases parse the same
         phase = parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const)
     else:
