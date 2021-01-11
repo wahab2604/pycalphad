@@ -16,7 +16,7 @@ Careful of a gotcha:  `obj.setParseAction` modifies the object in place but call
 import numpy as np
 from dataclasses import dataclass
 from pycalphad import Database
-from collections import namedtuple, deque
+from collections import deque
 
 
 class TokenParser(deque):
@@ -34,9 +34,27 @@ class TokenParser(deque):
         return [self.parse(cls) for _ in range(N)]
 
 
-Header = namedtuple('Header', ('list_soln_species_count', 'num_stoich_phases', 'pure_elements', 'pure_elements_mass', 'gibbs_coefficient_idxs', 'excess_coefficient_idxs'))
-AdditionalCoefficientPair = namedtuple('AdditionalCoefficientPair', ('coefficient', 'exponent'))
-Interval = namedtuple('Interval', ('temperature', 'coefficients', 'additional_coeff_pairs'))
+@dataclass
+class Header:
+    list_soln_species_count: [int]
+    num_stoich_phases: int
+    pure_elements: [str]
+    pure_elements_mass: [float]
+    gibbs_coefficient_idxs: [int]
+    excess_coefficient_idxs: [int]
+
+
+@dataclass
+class AdditionalCoefficientPair:
+    coefficient: float
+    exponent: float
+
+
+@dataclass
+class Interval:
+    temperature: float
+    coefficients: [float]
+    additional_coeff_pairs: [AdditionalCoefficientPair]
 
 
 @dataclass
@@ -105,6 +123,7 @@ class ExcessCEFMagnetic:
     parameter_order: int
     curie_temperature: float
     magnetic_moment: float
+
 
 @dataclass
 class ExcessQKTO:
