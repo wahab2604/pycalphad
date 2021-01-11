@@ -313,6 +313,27 @@ def parse_excess_parameters(toks, num_excess_coeffs):
     return excess_terms
 
 
+def parse_excess_parameters_pitz(toks, num_excess_coeffs):
+    excess_terms = []
+    while True:
+        num_interacting_species = toks.parse(int)
+        if num_interacting_species == 0:
+            break
+        # TODO: check if this is correct for this model
+        # there are always 3 ints, regardless of the above "number of interacting species", if the number of interactings species is 2, we'll just throw the third number away for now
+        if num_interacting_species == 2:
+            interacting_species_idxs = toks.parseN(num_interacting_species, int)
+            toks.parse(int)
+        elif num_interacting_species == 3:
+            interacting_species_idxs = toks.parseN(num_interacting_species, int)
+        else:
+            raise ValueError(f"Invalid number of interacting species for Pitzer model, got {num_interacting_species} (expected 2 or 3).")
+        # TODO: not sure exactly if this value is parameter order, but it seems to be something like that
+        parameter_order = None
+        excess_terms.append(ExcessCEF(interacting_species_idxs, parameter_order, toks.parseN(num_excess_coeffs, float)))
+    return excess_terms
+
+
 def parse_excess_qkto(toks, num_excess_coeffs):
     excess_terms = []
     while True:
@@ -334,7 +355,10 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
         toks.parseN(2, float)
     endmembers = []
     for _ in range(num_const):
-        endmembers.append(parse_endmember(toks, num_pure_elements, num_gibbs_coeffs))
+        if phase_type == 'PITZ':
+            endmembers.append(parse_endmember_aqueous(toks, num_pure_elements, num_gibbs_coeffs))
+        else:
+            endmembers.append(parse_endmember(toks, num_pure_elements, num_gibbs_coeffs))
         if phase_type in ('QKTO',):
             # TODO: is this correct?
             # there's two additional numbers. they seem to always be 1.000 and 1, so we'll just throw them away
@@ -358,7 +382,7 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
         num_endmembers = int(np.prod(subl_constituents))
         for _ in range(num_subl):
             _ = toks.parseN(num_endmembers, int)
-    elif phase_type in ('IDMX', 'RKMP', 'QKTO', 'RKMPM'):
+    elif phase_type in ('IDMX', 'RKMP', 'QKTO', 'RKMPM', 'PITZ'):
         subl_ratios = [1.0]
     else:
         raise NotImplemented(f"Phase type {phase_type} does not have method defined for determing the sublattice ratios")
@@ -367,6 +391,8 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
     if phase_type in ('IDMX',):
         # No excess parameters
         excess_parameters = []
+    elif phase_type in ('PITZ',):
+        excess_parameters = parse_excess_parameters_pitz(toks, num_excess_coeffs)
     elif phase_type in ('RKMP', 'SUBLM', 'RKMPM', 'SUBL'):
         # SUBL will have no excess parameters, but it will have the "0" terminator like it has excess parameters so we can use the excess parameter parsing to process it all the same.
         excess_parameters = []
@@ -406,7 +432,7 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
         phase = parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
     elif phase_type == 'IDWZ':
         phase = parse_phase_aqueous(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
-    elif phase_type in ('IDMX', 'RKMP', 'RKMPM', 'QKTO', 'SUBL', 'SUBLM'):
+    elif phase_type in ('IDMX', 'RKMP', 'RKMPM', 'QKTO', 'SUBL', 'SUBLM', 'PITZ'):
         # all these phases parse the same
         phase = parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const)
     else:

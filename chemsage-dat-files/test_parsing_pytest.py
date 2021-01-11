@@ -498,7 +498,7 @@ full_parses = [
     ("Fe-C.dat", 308),
     pytest.param("Fe2SiO4-Mg2SiO4.dat", 142, marks=pytest.mark.xfail),  # Uses Gibbs equation type 12
     ("O-H-EA.dat", 102),
-    pytest.param("Pitzer.dat", 94, marks=pytest.mark.xfail),  # Uses Pitzer PITZ model
+    ("Pitzer.dat", 94),
     ("subl-ex.dat", 181),
 
     # Data files from thermochimica `data/` directory
