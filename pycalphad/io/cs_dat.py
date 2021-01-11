@@ -65,6 +65,7 @@ class IntervalFixedCP:
     S298: float
     CP_coefficients: float
     H_trans: float
+    additional_coeff_pairs: [AdditionalCoefficientPair]
 
 
 @dataclass
@@ -208,18 +209,22 @@ def parse_header(toks: TokenParser) -> Header:
     return header
 
 
+def parse_additional_terms(toks: TokenParser):
+    num_additional_terms = toks.parse(int)
+    return [AdditionalCoefficientPair(*toks.parseN(2, float)) for _ in range(num_additional_terms)]
+
+
 def parse_interval(toks: TokenParser, num_gibbs_coeffs, has_additional_terms) -> Interval:
     temperature = toks.parse(float)
     coefficients = toks.parseN(num_gibbs_coeffs, float)
     if has_additional_terms:
-        num_additional_terms = toks.parse(int)
-        additional_coeff_pairs = [AdditionalCoefficientPair(*toks.parseN(2, float)) for _ in range(num_additional_terms)]
+        additional_coeff_pairs = parse_additional_terms(toks)
     else:
         additional_coeff_pairs = []
     return Interval(temperature, coefficients, additional_coeff_pairs)
 
 
-def parse_interval_fixed_heat_capacity(toks: TokenParser, num_gibbs_coeffs, H298, S298, has_H_trans=False) -> IntervalFixedCP:
+def parse_interval_fixed_heat_capacity(toks: TokenParser, num_gibbs_coeffs, H298, S298, has_H_trans=False, has_additional_terms=False) -> IntervalFixedCP:
     # 6 coefficients are required
     assert num_gibbs_coeffs == 6
     if has_H_trans:
@@ -228,7 +233,11 @@ def parse_interval_fixed_heat_capacity(toks: TokenParser, num_gibbs_coeffs, H298
         H_trans = 0.0  # 0.0 will be added to the first (or only) interval
     temperature = toks.parse(float)
     CP_coefficients = toks.parseN(4, float)
-    return IntervalFixedCP(temperature, H298, S298, CP_coefficients, H_trans)
+    if has_additional_terms:
+        additional_coeff_pairs = parse_additional_terms(toks)
+    else:
+        additional_coeff_pairs = []
+    return IntervalFixedCP(temperature, H298, S298, CP_coefficients, H_trans, additional_coeff_pairs)
 
 
 def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs, is_stoichiometric=False):
