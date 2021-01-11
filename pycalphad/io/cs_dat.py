@@ -228,12 +228,14 @@ def parse_endmember_aqueous(toks: TokenParser, num_pure_elements: int, num_gibbs
     return EndmemberAqueous(em.species_name, em.gibbs_eq_type, em.stoichiometry_pure_elements[1:], em.intervals, em.stoichiometry_pure_elements[0])
 
 
-def parse_endmember_subq(toks: TokenParser, num_pure_elements, num_gibbs_coeffs):
+def parse_endmember_subq(toks: TokenParser, num_pure_elements, num_gibbs_coeffs, zeta=None):
     em = parse_endmember(toks, num_pure_elements, num_gibbs_coeffs)
     # TODO: is 5 correct? I only have two SUBQ/SUBG databases and they seem equivalent
     # I think the first four are the actual stoichiometries of each element in the quadruplet, but I'm unclear.
     stoichiometry_quadruplet = toks.parseN(5, float)
-    zeta = toks.parse(float)
+    if zeta is None:
+        # This is SUBQ we need to parse it. If zeta is passed, that means we're in SUBG mode
+        zeta = toks.parse(float)
     return EndmemberSUBQ(em.species_name, em.gibbs_eq_type, em.stoichiometry_pure_elements, em.intervals, stoichiometry_quadruplet, zeta)
 
 
@@ -255,9 +257,13 @@ def parse_subq_excess(toks, mixing_type, num_excess_coeffs):
 
 
 def parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs):
+    if phase_type == 'SUBG':
+        zeta = toks.parse(float)
+    else:
+        zeta = None
     num_pairs = toks.parse(int)
     num_quadruplets = toks.parse(int)
-    endmembers = [parse_endmember_subq(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_pairs)]
+    endmembers = [parse_endmember_subq(toks, num_pure_elements, num_gibbs_coeffs, zeta=zeta) for _ in range(num_pairs)]
     num_subl_1_const = toks.parse(int)
     num_subl_2_const = toks.parse(int)
     subl_1_const = toks.parseN(num_subl_1_const, str)
@@ -426,7 +432,7 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
     """Dispatches to the correct parser depending on the phase type"""
     phase_name = toks.parse(str)
     phase_type = toks.parse(str)
-    if phase_type == 'SUBQ':
+    if phase_type in ('SUBQ', 'SUBG'):
         phase = parse_phase_subq(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs)
     elif phase_type == 'IDVD':
         phase = parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
