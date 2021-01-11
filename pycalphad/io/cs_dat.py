@@ -58,6 +58,16 @@ class Interval:
 
 
 @dataclass
+class IntervalFixedCP:
+    # Fixed term heat capacity interval
+    temperature: float
+    H298: float
+    S298: float
+    CP_coefficients: float
+    H_trans: float
+
+
+@dataclass
 class Quadruplet:
     quadruplet_idxs: [int]  # exactly four
     quadruplet_coordinations: [float]  # exactly four
@@ -209,6 +219,18 @@ def parse_interval(toks: TokenParser, num_gibbs_coeffs, has_additional_terms) ->
     return Interval(temperature, coefficients, additional_coeff_pairs)
 
 
+def parse_interval_fixed_heat_capacity(toks: TokenParser, num_gibbs_coeffs, H298, S298, has_H_trans=False) -> IntervalFixedCP:
+    # 6 coefficients are required
+    assert num_gibbs_coeffs == 6
+    if has_H_trans:
+        H_trans = toks.parse(float)
+    else:
+        H_trans = 0.0  # 0.0 will be added to the first (or only) interval
+    temperature = toks.parse(float)
+    CP_coefficients = toks.parseN(4, float)
+    return IntervalFixedCP(temperature, H298, S298, CP_coefficients, H_trans)
+
+
 def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs, is_stoichiometric=False):
     species_name = toks.parse(str)
     if toks[0] == '#':
@@ -218,17 +240,21 @@ def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs, is_s
     has_magnetic = gibbs_eq_type > 12
     gibbs_eq_type_reduced = (gibbs_eq_type - 12) if has_magnetic else gibbs_eq_type
     has_additional_terms = gibbs_eq_type_reduced in (4,)
-    # TODO: type 7 is H298, S298, 4 cp coefficients, if there's >1 term, then there's a delta H after each interval except the last
-    if gibbs_eq_type_reduced not in (1, 4,):
-        raise ValueError(f"Gibbs equation type {gibbs_eq_type} is not yet supported.")
     num_intervals = toks.parse(int)
     stoichiometry_pure_elements = toks.parseN(num_pure_elements, float)
-    intervals = [parse_interval(toks, num_gibbs_coeffs, has_additional_terms) for _ in range(num_intervals)]
-    # TODO: magnetic terms
-    # solution phase: 4 floats, stoichiometric: 2 floats
-    # magnetic comes after all the intervals
-    curie_temperature = None
-    magnetic_moment = None
+    # Piecewise endmember energy intervals
+    if gibbs_eq_type_reduced in (1, 4):
+        intervals = [parse_interval(toks, num_gibbs_coeffs, has_additional_terms) for _ in range(num_intervals)]
+    elif gibbs_eq_type_reduced in (7,):
+        H298 = toks.parse(float)
+        S298 = toks.parse(float)
+        # parse the first without H_trans, then parse the rest
+        intervals = [parse_interval_fixed_heat_capacity(toks, num_gibbs_coeffs, H298, S298, has_H_trans=False)]
+        for _ in range(num_intervals - 1):
+            intervals.append(parse_interval_fixed_heat_capacity(toks, num_gibbs_coeffs, H298, S298, has_H_trans=True))
+    else:
+        raise ValueError(f"Gibbs equation type {gibbs_eq_type} is not yet supported. Expected one of (1, 4, 7, 13, 16, 19).")
+    # magnetic terms
     if has_magnetic:
         curie_temperature = toks.parse(float)
         magnetic_moment = toks.parse(float)

@@ -493,8 +493,8 @@ full_parses = [
     # Data files from FACT documentation
     # See https://gtt-technologies.de/software/chemapp/documentation/online-manual/
     ("Pb-Sn.dat", 90),
-    pytest.param("C-N-O.dat", 66, marks=pytest.mark.xfail),  # Uses Gibbs equation type 7
-    pytest.param("C-O-Si.dat", 113, marks=pytest.mark.xfail),  # Uses Gibbs equation type 7
+    pytest.param("C-N-O.dat", 66),  # Uses Gibbs equation type 7
+    pytest.param("C-O-Si.dat", 113),  # Uses Gibbs equation type 7
     ("Fe-C.dat", 308),
     pytest.param("Fe2SiO4-Mg2SiO4.dat", 142, marks=pytest.mark.xfail),  # Uses Gibbs equation type 12
     ("O-H-EA.dat", 102),
