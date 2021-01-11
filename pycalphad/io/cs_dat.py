@@ -51,21 +51,31 @@ class AdditionalCoefficientPair:
 
 
 @dataclass
-class Interval:
-    temperature: float
-    coefficients: [float]
-    additional_coeff_pairs: [AdditionalCoefficientPair]
+class PTVmTerms:
+    terms: [float]
 
 
 @dataclass
-class IntervalFixedCP:
-    # Fixed term heat capacity interval
+class Interval:
     temperature: float
+
+
+@dataclass
+class IntervalG(Interval):
+    coefficients: [float]
+    additional_coeff_pairs: [AdditionalCoefficientPair]
+    PTVm_terms: [PTVmTerms]
+
+
+@dataclass
+class IntervalCP(Interval):
+    # Fixed term heat capacity interval with extended terms
     H298: float
     S298: float
     CP_coefficients: float
     H_trans: float
     additional_coeff_pairs: [AdditionalCoefficientPair]
+    PTVm_terms: [PTVmTerms]
 
 
 @dataclass
@@ -209,22 +219,27 @@ def parse_header(toks: TokenParser) -> Header:
     return header
 
 
-def parse_additional_terms(toks: TokenParser):
+def parse_additional_terms(toks: TokenParser) -> [AdditionalCoefficientPair]:
     num_additional_terms = toks.parse(int)
     return [AdditionalCoefficientPair(*toks.parseN(2, float)) for _ in range(num_additional_terms)]
 
 
-def parse_interval(toks: TokenParser, num_gibbs_coeffs, has_additional_terms) -> Interval:
+def parse_PTVm_terms(toks: TokenParser) -> PTVmTerms:
+    # TODO: is this correct? Is there a better mapping?
+    # parse molar volume terms, there seem to always be 11 terms (at least in the one file I have)
+    return PTVmTerms(toks.parseN(11, float))
+
+
+def parse_interval_Gibbs(toks: TokenParser, num_gibbs_coeffs, has_additional_terms, has_PTVm_terms) -> IntervalG:
     temperature = toks.parse(float)
     coefficients = toks.parseN(num_gibbs_coeffs, float)
-    if has_additional_terms:
-        additional_coeff_pairs = parse_additional_terms(toks)
-    else:
-        additional_coeff_pairs = []
-    return Interval(temperature, coefficients, additional_coeff_pairs)
+    additional_coeff_pairs = parse_additional_terms(toks) if has_additional_terms else []
+    # TODO: parsing for constant molar volumes
+    PTVm_terms = parse_PTVm_terms(toks) if has_PTVm_terms else []
+    return IntervalG(temperature, coefficients, additional_coeff_pairs, PTVm_terms)
 
 
-def parse_interval_fixed_heat_capacity(toks: TokenParser, num_gibbs_coeffs, H298, S298, has_H_trans=False, has_additional_terms=False) -> IntervalFixedCP:
+def parse_interval_heat_capacity(toks: TokenParser, num_gibbs_coeffs, H298, S298, has_H_trans, has_additional_terms, has_PTVm_terms) -> IntervalCP:
     # 6 coefficients are required
     assert num_gibbs_coeffs == 6
     if has_H_trans:
@@ -233,11 +248,10 @@ def parse_interval_fixed_heat_capacity(toks: TokenParser, num_gibbs_coeffs, H298
         H_trans = 0.0  # 0.0 will be added to the first (or only) interval
     temperature = toks.parse(float)
     CP_coefficients = toks.parseN(4, float)
-    if has_additional_terms:
-        additional_coeff_pairs = parse_additional_terms(toks)
-    else:
-        additional_coeff_pairs = []
-    return IntervalFixedCP(temperature, H298, S298, CP_coefficients, H_trans, additional_coeff_pairs)
+    additional_coeff_pairs = parse_additional_terms(toks) if has_additional_terms else []
+    # TODO: parsing for constant molar volumes
+    PTVm_terms = parse_PTVm_terms(toks) if has_PTVm_terms else []
+    return IntervalCP(temperature, H298, S298, CP_coefficients, H_trans, additional_coeff_pairs, PTVm_terms)
 
 
 def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs, is_stoichiometric=False):
@@ -246,23 +260,31 @@ def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs, is_s
         # special case for stoichiometric phases, this is a dummy species, skip it
         _ = toks.parse(str)
     gibbs_eq_type = toks.parse(int)
+
+    # Determine how to parse the type of thermodynamic option
     has_magnetic = gibbs_eq_type > 12
     gibbs_eq_type_reduced = (gibbs_eq_type - 12) if has_magnetic else gibbs_eq_type
-    has_additional_terms = gibbs_eq_type_reduced in (4,)
+    is_gibbs_energy_interval = gibbs_eq_type_reduced in (1, 2, 3, 4, 5, 6)
+    is_heat_capacity_interval = gibbs_eq_type_reduced in (7, 8, 9, 10, 11, 12)
+    has_additional_terms = gibbs_eq_type_reduced in (4, 5, 6, 10, 11, 12)
+    has_constant_Vm_terms = gibbs_eq_type_reduced in (2, 5, 8, 11)
+    has_PTVm_terms = gibbs_eq_type_reduced in (3, 6, 9, 12)
     num_intervals = toks.parse(int)
     stoichiometry_pure_elements = toks.parseN(num_pure_elements, float)
+    if has_constant_Vm_terms:
+        raise ValueError("Constant molar volume equations (thermodynamic data options (2, 5, 8, 11)) are not supported yet.")
     # Piecewise endmember energy intervals
-    if gibbs_eq_type_reduced in (1, 4):
-        intervals = [parse_interval(toks, num_gibbs_coeffs, has_additional_terms) for _ in range(num_intervals)]
-    elif gibbs_eq_type_reduced in (7,):
+    if is_gibbs_energy_interval:
+        intervals = [parse_interval_Gibbs(toks, num_gibbs_coeffs, has_additional_terms, has_PTVm_terms) for _ in range(num_intervals)]
+    elif is_heat_capacity_interval:
         H298 = toks.parse(float)
         S298 = toks.parse(float)
         # parse the first without H_trans, then parse the rest
-        intervals = [parse_interval_fixed_heat_capacity(toks, num_gibbs_coeffs, H298, S298, has_H_trans=False)]
+        intervals = [parse_interval_heat_capacity(toks, num_gibbs_coeffs, H298, S298, False, has_additional_terms, has_PTVm_terms)]
         for _ in range(num_intervals - 1):
-            intervals.append(parse_interval_fixed_heat_capacity(toks, num_gibbs_coeffs, H298, S298, has_H_trans=True))
+            intervals.append(parse_interval_heat_capacity(toks, num_gibbs_coeffs, H298, S298, True, has_additional_terms, has_PTVm_terms))
     else:
-        raise ValueError(f"Gibbs equation type {gibbs_eq_type} is not yet supported. Expected one of (1, 4, 7, 13, 16, 19).")
+        raise ValueError(f"Unknown thermodynamic data option type {gibbs_eq_type}. A number in [1, 24].")
     # magnetic terms
     if has_magnetic:
         curie_temperature = toks.parse(float)
