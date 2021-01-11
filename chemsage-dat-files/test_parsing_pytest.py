@@ -290,7 +290,7 @@ def test_parse_subq_phase():
     assert len(phase_subq.endmembers) == 6
     for em in phase_subq.endmembers:
         assert len(em.stoichiometry_quadruplet) == 5
-        assert np.isclose(em.coordination, 2.4)
+        assert np.isclose(em.zeta, 2.4)
     assert phase_subq.num_quadruplets == 6
     assert phase_subq.num_subl_1_const == 6
     assert phase_subq.num_subl_2_const == 1

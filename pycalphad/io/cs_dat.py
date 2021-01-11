@@ -89,7 +89,7 @@ class EndmemberAqueous(Endmember):
 @dataclass
 class EndmemberSUBQ(Endmember):
     stoichiometry_quadruplet: [float]
-    coordination: float
+    zeta: float
 
 
 @dataclass
@@ -233,8 +233,8 @@ def parse_endmember_subq(toks: TokenParser, num_pure_elements, num_gibbs_coeffs)
     # TODO: is 5 correct? I only have two SUBQ/SUBG databases and they seem equivalent
     # I think the first four are the actual stoichiometries of each element in the quadruplet, but I'm unclear.
     stoichiometry_quadruplet = toks.parseN(5, float)
-    coordination = toks.parse(float)
-    return EndmemberSUBQ(em.species_name, em.gibbs_eq_type, em.stoichiometry_pure_elements, em.intervals, stoichiometry_quadruplet, coordination)
+    zeta = toks.parse(float)
+    return EndmemberSUBQ(em.species_name, em.gibbs_eq_type, em.stoichiometry_pure_elements, em.intervals, stoichiometry_quadruplet, zeta)
 
 
 def parse_quadruplet(toks):
