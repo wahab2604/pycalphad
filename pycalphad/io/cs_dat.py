@@ -287,6 +287,7 @@ def parse_excess_parameters(toks, num_excess_coeffs):
 def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     if phase_type in ('SUBLM',):
         # ignore first two numbers, these don't seem to be meaningful and always come in 2 regardless of # of sublattices
+        # TODO: these are magnetic, not garbage
         toks.parseN(2, float)
     endmembers = [parse_endmember(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_const)]
 
