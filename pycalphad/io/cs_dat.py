@@ -94,9 +94,16 @@ class EndmemberSUBQ(Endmember):
 
 @dataclass
 class ExcessCEF:
-    interacting_species_idxs: [str]
+    interacting_species_idxs: [int]
     parameter_order: int
     parameters: [float]
+
+
+@dataclass
+class ExcessQKTO:
+    interacting_species_idxs: [int]
+    interacing_species_type: [int]
+    coefficients: [float]
 
 
 @dataclass
@@ -284,12 +291,32 @@ def parse_excess_parameters(toks, num_excess_coeffs):
     return excess_terms
 
 
+def parse_excess_qkto(toks, num_excess_coeffs):
+    excess_terms = []
+    while True:
+        num_interacting_species = toks.parse(int)
+        if num_interacting_species == 0:
+            break
+        interacting_species_idxs = toks.parseN(num_interacting_species, int)
+        interacing_species_type = toks.parseN(num_interacting_species, int)  # species type, for identify the asymmetry
+        coefficients = toks.parseN(num_excess_coeffs, float)
+        excess_terms.append(ExcessQKTO(interacting_species_idxs, interacing_species_type, coefficients))
+    return excess_terms
+
+
 def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     if phase_type in ('SUBLM',):
         # ignore first two numbers, these don't seem to be meaningful and always come in 2 regardless of # of sublattices
         # TODO: these are magnetic, not garbage
         toks.parseN(2, float)
-    endmembers = [parse_endmember(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(num_const)]
+    endmembers = []
+    for _ in range(num_const):
+        endmembers.append(parse_endmember(toks, num_pure_elements, num_gibbs_coeffs))
+        if phase_type in ('QKTO',):
+            # TODO: is this correct?
+            # there's two additional numbers. they seem to always be 1.000 and 1, so we'll just throw them away
+            toks.parse(float)
+            toks.parse(int)
 
     # defining sublattice model
     if phase_type in ('SUBL', 'SUBLM'):
@@ -308,7 +335,7 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
         num_endmembers = int(np.prod(subl_constituents))
         for _ in range(num_subl):
             _ = toks.parseN(num_endmembers, int)
-    elif phase_type in ('IDMX', 'RKMP'):
+    elif phase_type in ('IDMX', 'RKMP', 'QKTO'):
         subl_ratios = [1.0]
     else:
         raise NotImplemented(f"Phase type {phase_type} does not have method defined for determing the sublattice ratios")
@@ -320,6 +347,8 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
     elif phase_type in ('RKMP', 'SUBLM', 'SUBL'):
         # SUBL will have no excess parameters, but it will have the "0" terminator like it has excess parameters
         excess_parameters = parse_excess_parameters(toks, num_excess_coeffs)
+    elif phase_type in ('QKTO',):
+        excess_parameters = parse_excess_qkto(toks, num_excess_coeffs)
     return Phase_CEF(phase_name, phase_type, endmembers, subl_ratios, excess_parameters)
 
 
@@ -351,7 +380,7 @@ def parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, nu
         phase = parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
     elif phase_type == 'IDWZ':
         phase = parse_phase_aqueous(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const)
-    elif phase_type in ('IDMX', 'RKMP', 'SUBL', 'SUBLM'):
+    elif phase_type in ('IDMX', 'RKMP', 'QKTO', 'SUBL', 'SUBLM'):
         # all these phases parse the same
         phase = parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const)
     else:
