@@ -156,6 +156,24 @@ class Endmember():
             T_min = interval.T_max
         return Piecewise(*expr_cond_pairs, evaluate=False)
 
+    @property
+    def constituent_array(self):
+        all_species = self.species_name.upper().split(':')
+        return tuple((sp,) for sp in all_species)
+
+    @property
+    def species_dict(self):
+        # Assumes that species are all pure elements, this may not be correct if
+        # there are associates defined, but it's not clear if associates are
+        # allowed for multi-sublattice phases (e.g. SUBL) because I don't see
+        # a straightforward way to determine the pure element composition of
+        # an individual species. It would be possible for a single sublattice
+        # endmember (e.g. from RKMP) because there species_name only contains
+        # one species and the pure element stoichiometries are given, by
+        # comparison, the species_name for SUBL have multiple species.
+        all_species = self.species_name.upper().split(':')
+        return {sp_str: v.Species(sp_str) for sp_str in all_species}
+
 
 @dataclass
 class EndmemberMagnetic(Endmember):

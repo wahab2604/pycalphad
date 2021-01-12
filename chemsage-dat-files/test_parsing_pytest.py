@@ -567,7 +567,7 @@ def test_gibbs_interval_construction():
     assert cond2 == cond
 
 
-def test_endmember_expression_construction():
+def test_endmember_expression_construction_RKMP():
     em_str = """ C
    4  3    0.0    1.0
   2600.0000      712234.84     -11.891684     -21.741391     0.47346994E-03
@@ -585,4 +585,27 @@ def test_endmember_expression_construction():
     expr = em.expr([1, 2, 3, 4, 5, 6])
     assert isinstance(expr, Piecewise)
     assert len(expr.as_expr_set_pairs()) == 3
+    assert em.constituent_array == (('C',),)
+    assert len(em.species_dict) == 1
 
+
+def test_endmember_expression_construction_SUBL():
+    em_str = """ Co:Cr:Co
+   4  3    0.0    1.0
+  2600.0000      712234.84     -11.891684     -21.741391     0.47346994E-03
+ -.53611800E-07 -28855.579
+ 1 -386.20250      99.00
+  6000.0000      1207023.0     -98.547935     -15.608903     0.00000000
+ 0.00000000     -29392513.
+ 2  6562.6344       0.50 -91434.292      99.00
+  6001.0000      701947.43      2.8618228     -23.183583     0.00000000
+ 0.00000000     0.00000000
+ 1 0.00000000       0.00
+    """
+    toks = tokenize(em_str)
+    em = parse_endmember(toks, 2, 6)
+    expr = em.expr([1, 2, 3, 4, 5, 6])
+    assert isinstance(expr, Piecewise)
+    assert len(expr.as_expr_set_pairs()) == 3
+    assert em.constituent_array == (('CO',), ('CR',), ('CO',))
+    assert len(em.species_dict) == 2
