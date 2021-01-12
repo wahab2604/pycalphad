@@ -559,9 +559,30 @@ def test_gibbs_interval_construction():
     interval = parse_interval_Gibbs(toks, 6, has_additional_terms=True, has_PTVm_terms=False)
     expr = interval.expr([1, 2, 3, 4, 5, 6])
     assert expr == EXPECTED_EXPR
-    cond = interval.cond(T_low=298.15)
-    assert len(cond) == 2
+    cond = interval.cond(T_min=298.15)
+    assert len(cond.args) == 2
     assert cond == EXPECTED_COND
-    expr2, cond2 = interval.expr_cond_pair([1, 2, 3, 4, 5, 6], T_low=298.15)
+    expr2, cond2 = interval.expr_cond_pair([1, 2, 3, 4, 5, 6], T_min=298.15)
     assert expr2 == expr
     assert cond2 == cond
+
+
+def test_endmember_expression_construction():
+    em_str = """ C
+   4  3    0.0    1.0
+  2600.0000      712234.84     -11.891684     -21.741391     0.47346994E-03
+ -.53611800E-07 -28855.579
+ 1 -386.20250      99.00
+  6000.0000      1207023.0     -98.547935     -15.608903     0.00000000
+ 0.00000000     -29392513.
+ 2  6562.6344       0.50 -91434.292      99.00
+  6001.0000      701947.43      2.8618228     -23.183583     0.00000000
+ 0.00000000     0.00000000
+ 1 0.00000000       0.00
+    """
+    toks = tokenize(em_str)
+    em = parse_endmember(toks, 2, 6)
+    expr = em.expr([1, 2, 3, 4, 5, 6])
+    assert isinstance(expr, Piecewise)
+    assert len(expr.as_expr_set_pairs()) == 3
+

@@ -73,24 +73,24 @@ class PTVmTerms:
 
 
 @dataclass
-class _Interval:  # Don't conflict with sympy.Interval
+class IntervalBase:
     T_max: float
 
     def expr(self):
-        raise NotImplementedError("Subclasses of _Interval must define an expression for the energy")
+        raise NotImplementedError("Subclasses of IntervalBase must define an expression for the energy")
 
-    def cond(self, T_low=298.15):
-        return (T_low <= v.T) & (v.T < self.T_max)
+    def cond(self, T_min=298.15):
+        return (T_min <= v.T) & (v.T < self.T_max)
 
-    def expr_cond_pair(self, *args, T_low=298.15, **kwargs):
+    def expr_cond_pair(self, *args, T_min=298.15, **kwargs):
         """Return an (expr, cond) tuple used to construct Piecewise expressions"""
         expr = self.expr(*args, **kwargs)
-        cond = self.cond(T_low)
+        cond = self.cond(T_min)
         return (expr, cond)
 
 
 @dataclass
-class IntervalG(_Interval):
+class IntervalG(IntervalBase):
     coefficients: [float]
     additional_coeff_pairs: [AdditionalCoefficientPair]
     PTVm_terms: [PTVmTerms]
@@ -109,7 +109,7 @@ class IntervalG(_Interval):
 
 
 @dataclass
-class IntervalCP(_Interval):
+class IntervalCP(IntervalBase):
     # Fixed term heat capacity interval with extended terms
     H298: float
     S298: float
@@ -118,7 +118,7 @@ class IntervalCP(_Interval):
     additional_coeff_pairs: [AdditionalCoefficientPair]
     PTVm_terms: [PTVmTerms]
 
-    def expr(self, indices, T_low=298.15):
+    def expr(self, indices, T_min=298.15):
         raise NotImplementedError("Gibbs energy equations defined with heat capacity terms are not yet supported.")
 
 
@@ -141,11 +141,20 @@ class ExcessQuadruplet:
 
 
 @dataclass
-class Endmember:
+class Endmember():
     species_name: str
     gibbs_eq_type: str
     stoichiometry_pure_elements: [float]
-    intervals: [_Interval]
+    intervals: [IntervalBase]
+
+    def expr(self, indices):
+        """Return a Piecewise (in temperature) energy expression for this endmember (i.e. only the data from the energy intervals)"""
+        T_min = 298.15
+        expr_cond_pairs = []
+        for interval in self.intervals:
+            expr_cond_pairs.append(interval.expr_cond_pair(indices, T_min=T_min))
+            T_min = interval.T_max
+        return Piecewise(*expr_cond_pairs, evaluate=False)
 
 
 @dataclass
@@ -600,8 +609,11 @@ def read_cs_dat(dbf: Database, fd):
     fd : file-like
         File descriptor.
     """
-    data = parse_cs_dat(fd.read())
-    # TODO: modify the dbf in place
+    header, solution_phases, stoichiometric_phases, remaining_tokens = parse_cs_dat(fd.read())
+    num_pure_elements = len(header.pure_elements)
+    num_gibbs_coeffs = len(header.gibbs_coefficient_idxs)
+    num_excess_coeffs = len(header.excess_coefficient_idxs)
+
 
 
 Database.register_format("dat", read=read_cs_dat, write=None)
