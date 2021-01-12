@@ -537,9 +537,11 @@ def parse_cs_dat(instring):
     # num_const = 0 is gas phase that isn't present, so skip it
     solution_phases = [parse_phase(toks, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const) for num_const in header.list_soln_species_count if num_const != 0]
     stoichiometric_phases = [parse_stoich_phase(toks, num_pure_elements, num_gibbs_coeffs) for _ in range(header.num_stoich_phases)]
-    # TODO: better handling and validation of this
-    remaining_tokens = ' '.join(toks)
-    # print(remaining_tokens)
+    # Comment block at the end surrounded by "#####..." tokens
+    # This might be a convention rather than required, but is an easy enough check to change.
+    if len(toks) > 0:
+        assert toks[0].startswith('#')
+        assert toks[-1].startswith('#')
     return header, solution_phases, stoichiometric_phases, toks
 
 
