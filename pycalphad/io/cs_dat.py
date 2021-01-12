@@ -17,6 +17,20 @@ import numpy as np
 from dataclasses import dataclass
 from pycalphad import Database
 from collections import deque
+from sympy import S, log, Piecewise, And
+from pycalphad import variables as v
+
+
+# From ChemApp Documentation, section 11.1 "The format of a ChemApp data-file"
+# We use a leading zero term because the data file's indices are 1-indexed and
+# this prevents us from needing to shift the indicies.
+GIBBS_TERMS = (S.Zero, S.One, v.T, v.T*log(v.T), v.T**2, v.T**3, 1/v.T)
+# TODO: HEAT_CAPACITY_TERMS:
+# We need to transform these into Gibbs energies, i.e.
+# G = H - TS = (A + integral(CpdT)) + T(B + integral(Cp/T dT))
+# Terms are
+# Cp = (S.Zero, S.One, v.T, v.T**2, v.T**(-2))
+EXCESS_TERMS = (S.Zero, S.One, v.T, v.T*log(v.T), v.T**2, v.T**3, 1/v.T, v.P, v.P**2)
 
 
 class TokenParser(deque):
@@ -49,6 +63,9 @@ class AdditionalCoefficientPair:
     coefficient: float
     exponent: float
 
+    def expr(self):
+        return self.coefficient * v.T**(self.exponent)
+
 
 @dataclass
 class PTVmTerms:
@@ -56,19 +73,43 @@ class PTVmTerms:
 
 
 @dataclass
-class Interval:
-    temperature: float
+class _Interval:  # Don't conflict with sympy.Interval
+    T_max: float
+
+    def expr(self):
+        raise NotImplementedError("Subclasses of _Interval must define an expression for the energy")
+
+    def cond(self, T_low=298.15):
+        return (T_low <= v.T) & (v.T < self.T_max)
+
+    def expr_cond_pair(self, *args, T_low=298.15, **kwargs):
+        """Return an (expr, cond) tuple used to construct Piecewise expressions"""
+        expr = self.expr(*args, **kwargs)
+        cond = self.cond(T_low)
+        return (expr, cond)
 
 
 @dataclass
-class IntervalG(Interval):
+class IntervalG(_Interval):
     coefficients: [float]
     additional_coeff_pairs: [AdditionalCoefficientPair]
     PTVm_terms: [PTVmTerms]
 
+    def expr(self, indices):
+        """Return an expression for the energy in this temperature interval"""
+        energy = S.Zero
+        # Add fixed energy terms
+        energy += sum([C*GIBBS_TERMS[i] for C, i in zip(self.coefficients, indices)])
+        # Add additional energy coefficient-exponent pair terms
+        energy += sum([addit_term.expr() for addit_term in self.additional_coeff_pairs])
+        # P-T molar volume terms, not supported
+        if len(self.PTVm_terms) > 0:
+            raise NotImplementedError("P-T molar volume terms are not supported")
+        return energy
+
 
 @dataclass
-class IntervalCP(Interval):
+class IntervalCP(_Interval):
     # Fixed term heat capacity interval with extended terms
     H298: float
     S298: float
@@ -76,6 +117,9 @@ class IntervalCP(Interval):
     H_trans: float
     additional_coeff_pairs: [AdditionalCoefficientPair]
     PTVm_terms: [PTVmTerms]
+
+    def expr(self, indices, T_low=298.15):
+        raise NotImplementedError("Gibbs energy equations defined with heat capacity terms are not yet supported.")
 
 
 @dataclass
@@ -101,7 +145,7 @@ class Endmember:
     species_name: str
     gibbs_eq_type: str
     stoichiometry_pure_elements: [float]
-    intervals: [Interval]
+    intervals: [_Interval]
 
 
 @dataclass
@@ -231,12 +275,12 @@ def parse_PTVm_terms(toks: TokenParser) -> PTVmTerms:
 
 
 def parse_interval_Gibbs(toks: TokenParser, num_gibbs_coeffs, has_additional_terms, has_PTVm_terms) -> IntervalG:
-    temperature = toks.parse(float)
+    temperature_max = toks.parse(float)
     coefficients = toks.parseN(num_gibbs_coeffs, float)
     additional_coeff_pairs = parse_additional_terms(toks) if has_additional_terms else []
     # TODO: parsing for constant molar volumes
     PTVm_terms = parse_PTVm_terms(toks) if has_PTVm_terms else []
-    return IntervalG(temperature, coefficients, additional_coeff_pairs, PTVm_terms)
+    return IntervalG(temperature_max, coefficients, additional_coeff_pairs, PTVm_terms)
 
 
 def parse_interval_heat_capacity(toks: TokenParser, num_gibbs_coeffs, H298, S298, has_H_trans, has_additional_terms, has_PTVm_terms) -> IntervalCP:
@@ -246,12 +290,12 @@ def parse_interval_heat_capacity(toks: TokenParser, num_gibbs_coeffs, H298, S298
         H_trans = toks.parse(float)
     else:
         H_trans = 0.0  # 0.0 will be added to the first (or only) interval
-    temperature = toks.parse(float)
+    temperature_max = toks.parse(float)
     CP_coefficients = toks.parseN(4, float)
     additional_coeff_pairs = parse_additional_terms(toks) if has_additional_terms else []
     # TODO: parsing for constant molar volumes
     PTVm_terms = parse_PTVm_terms(toks) if has_PTVm_terms else []
-    return IntervalCP(temperature, H298, S298, CP_coefficients, H_trans, additional_coeff_pairs, PTVm_terms)
+    return IntervalCP(temperature_max, H298, S298, CP_coefficients, H_trans, additional_coeff_pairs, PTVm_terms)
 
 
 def parse_endmember(toks: TokenParser, num_pure_elements, num_gibbs_coeffs, is_stoichiometric=False):

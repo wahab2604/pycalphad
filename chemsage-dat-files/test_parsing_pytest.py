@@ -93,7 +93,7 @@ def test_parse_endmember():
     assert out.gibbs_eq_type == 1
     assert len(out.stoichiometry_pure_elements) == 8
     assert len(out.intervals) == 1
-    assert np.isclose(out.intervals[0].temperature, 3000.0)
+    assert np.isclose(out.intervals[0].T_max, 3000.0)
     assert len(out.intervals[0].coefficients) == 6
     assert len(out.intervals[0].additional_coeff_pairs) == 0
 
@@ -120,13 +120,13 @@ def test_parse_endmember():
     print()
     print(out.intervals[0].additional_coeff_pairs)
     print(repr(out.intervals[0].additional_coeff_pairs))
-    assert np.isclose(out.intervals[0].temperature, 577.0)
+    assert np.isclose(out.intervals[0].T_max, 577.0)
     assert len(out.intervals[0].coefficients) == 6
     assert len(out.intervals[0].additional_coeff_pairs) == 2
-    assert np.isclose(out.intervals[1].temperature, 1500.0)
+    assert np.isclose(out.intervals[1].T_max, 1500.0)
     assert len(out.intervals[1].coefficients) == 6
     assert len(out.intervals[1].additional_coeff_pairs) == 2
-    assert np.isclose(out.intervals[2].temperature, 6000.0)
+    assert np.isclose(out.intervals[2].T_max, 6000.0)
     assert len(out.intervals[2].coefficients) == 6
     assert len(out.intervals[2].additional_coeff_pairs) == 1
 
@@ -549,3 +549,19 @@ def test_parse_excess_parameters():
     assert np.allclose(excess_terms[1].parameters, [19300.0, 0.0, 0.0, 0.0])
     assert np.allclose(excess_terms[3].parameters, [-34671.0, 0.0, 0.0, 0.0])
     assert [len(xt.parameters) for xt in excess_terms] == [4, 4, 4, 4]
+
+
+def test_gibbs_interval_construction():
+    interval_str = "577.00000 -1419517.7 30687.563 -3436.4600 0.62998063 0.00000000 0.00000000 2 674287.33 99.00 -360918.86 0.50"
+    EXPECTED_EXPR = -1419517.7 + 30687.563*v.T - 3436.4600*v.T*log(v.T) + 0.62998063*v.T**2 + 674287.33*v.T**(99.00) - 360918.86*v.T**(0.50)
+    EXPECTED_COND = (298.15 <= v.T) & (v.T < 577.00000)
+    toks = tokenize(interval_str)
+    interval = parse_interval_Gibbs(toks, 6, has_additional_terms=True, has_PTVm_terms=False)
+    expr = interval.expr([1, 2, 3, 4, 5, 6])
+    assert expr == EXPECTED_EXPR
+    cond = interval.cond(T_low=298.15)
+    assert len(cond) == 2
+    assert cond == EXPECTED_COND
+    expr2, cond2 = interval.expr_cond_pair([1, 2, 3, 4, 5, 6], T_low=298.15)
+    assert expr2 == expr
+    assert cond2 == cond
