@@ -667,6 +667,7 @@ def read_cs_dat(dbf: Database, fd):
         if parsed_phase.phase_name in processed_phases:
             # DAT files allow multiple entries of the same phase to handle
             # miscibility gaps. We discard the duplicate phase definitions.
+            print(f"Skipping phase {parsed_phase.phase_name} because it's already in the database.")
             continue
         parsed_phase.insert(dbf, header.pure_elements, header.gibbs_coefficient_idxs, header.excess_coefficient_idxs)
         processed_phases.append(parsed_phase.phase_name)
