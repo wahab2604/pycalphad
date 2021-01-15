@@ -230,6 +230,9 @@ class _Phase:
     phase_type: str
     endmembers: [Endmember]
 
+    def insert(self, dbf: Database, pure_elements: [str], gibbs_coefficient_idxs: [int], excess_coefficient_idxs: [int]):
+        raise NotImplementedError(f"Subclass {type(self).__name__} of _Phase must implement `insert` to add the phase, constituents and parameters to the Database.")
+
 
 @dataclass
 class Phase_RealGas(_Phase):
@@ -237,10 +240,10 @@ class Phase_RealGas(_Phase):
 
 
 @dataclass
-class Phase_Stoichiometric:
-    phase_name: str
-    phase_type: str
-    endmembers: [Endmember]  # exactly one
+class Phase_Stoichiometric(_Phase):
+    def insert(self, dbf: Database, pure_elements: [str], gibbs_coefficient_idxs: [int], excess_coefficient_idxs: [int]):
+
+        dbf.add_phase(self.phase_name, {}, sublattices)
 
 
 @dataclass
@@ -628,14 +631,13 @@ def read_cs_dat(dbf: Database, fd):
         File descriptor.
     """
     header, solution_phases, stoichiometric_phases, remaining_tokens = parse_cs_dat(fd.read())
-    pure_elements = header.pure_elements
     # add elements and their reference states
-    for el, mass in zip(pure_elements, header.pure_elements_mass):
+    for el, mass in zip(header.pure_elements, header.pure_elements_mass):
         dbf.elements.add(el)
         # add element reference state data
         dbf.refstates[el] = {
             'mass': mass,
-            # the following metadata is not given in Chemsage files,
+            # the following metadata is not given in DAT files,
             # but is standard for our Database files
             'phase': None,
             'H298': None,
@@ -643,8 +645,14 @@ def read_cs_dat(dbf: Database, fd):
         }
     # Each phase subclass knows how to insert itself into the database.
     # The insert method will appropriately insert all endmembers as well.
+    processed_phases = []
     for parsed_phase in (*solution_phases, *stoichiometric_phases):
-        parsed_phase.insert(dbf, pure_elements, header.gibbs_coefficient_idxs, header.excess_coefficient_idxs)
+        if parsed_phase.phase_name in processed_phases:
+            # DAT files allow multiple entries of the same phase to handle
+            # miscibility gaps. We discard the duplicate phase definitions.
+            continue
+        parsed_phase.insert(dbf, header.pure_elements, header.gibbs_coefficient_idxs, header.excess_coefficient_idxs)
+        processed_phases.append(parsed_phase.phase_name)
 
     # process all the parameters that got added with dbf.add_parameter
     dbf.process_parameter_queue()

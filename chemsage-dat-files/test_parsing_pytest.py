@@ -609,3 +609,37 @@ def test_endmember_expression_construction_SUBL():
     assert len(expr.as_expr_set_pairs()) == 3
     assert em.constituent_array == (('CO',), ('CR',), ('CO',))
     assert len(em.species_dict) == 2
+
+
+full_parses = [
+    # filename, num_soln_phases, num_stoich_phases, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs
+
+    # Data files from FACT documentation
+    # See https://gtt-technologies.de/software/chemapp/documentation/online-manual/
+    ("Pb-Sn.dat", ''),
+    ("C-N-O.dat", ''),
+    ("C-O-Si.dat", ''),
+    ("Fe-C.dat", ''),
+    ("Fe2SiO4-Mg2SiO4.dat", ''),
+    ("O-H-EA.dat", ''),
+    ("Pitzer.dat", ''),
+    ("subl-ex.dat", ''),
+
+    # Data files from thermochimica `data/` directory
+    # See https://github.com/ornl-cees/thermochimica
+    ("C-O.dat", ''),
+    ("W-Au-Ar-Ne-O_04.dat", ''),
+    ("FeCuCbase.dat", ''),
+    ("FeTiVO.dat", ''),
+    ("Kaye_NobleMetals.dat", ''),
+    ("ZIRC-noSUBI.dat", ''),
+    ("test14.dat", ''),
+
+    # Data files from publications
+    ("CuZnFeCl-Viitala (1).dat", ''),
+]
+
+
+@pytest.mark.parametrize("filename, _", full_parses)
+def test_reading_chemsage_databases(filename, _):
+    dbf = Database(filename)
