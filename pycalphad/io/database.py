@@ -126,7 +126,6 @@ class Database(object): #pylint: disable=R0902
     def __hash__(self):
         return fhash(self.__dict__)
 
-
     def __getstate__(self):
         pickle_dict = {}
         for key, value in self.__dict__.items():
@@ -198,8 +197,7 @@ class Database(object): #pylint: disable=R0902
             fmt = fmt.lower()
         if fmt not in format_registry or format_registry[fmt].read is None:
             supported_reads = [key for key, value in format_registry.items() if value.read is not None]
-            raise NotImplementedError('Unsupported read format \'{0}\'. Supported formats: {1}'.format(fmt,
-                                                                                                        supported_reads))
+            raise NotImplementedError('Unsupported read format \'{0}\'. Supported formats: {1}'.format(fmt, supported_reads))
         # Is it a file descriptor?
         if hasattr(fname, 'read'):
             fd = fname
@@ -327,8 +325,8 @@ class Database(object): #pylint: disable=R0902
             return False
         else:
             def param_sort_key(x):
-                return x['phase_name'], x['parameter_type'], x['constituent_array'], \
-                       x['parameter_order'], x['diffusing_species']
+                return (x['phase_name'], x['parameter_type'], x['constituent_array'],
+                        x['parameter_order'], x['diffusing_species'])
             for key in self.__dict__.keys():
                 if key == '_parameters':
                     # Special handling for TinyDB objects
@@ -363,7 +361,8 @@ class Database(object): #pylint: disable=R0902
         None yet.
         """
         self._structure_dict[local_name] = global_name
-    def add_parameter(self, param_type, phase_name, #pylint: disable=R0913
+
+    def add_parameter(self, param_type, phase_name,  # pylint: disable=R0913
                       constituent_array, param_order,
                       param, ref=None, diffusing_species=None, force_insert=True):
         """
@@ -431,6 +430,7 @@ class Database(object): #pylint: disable=R0902
         new_phase.sublattices = tuple(sublattices)
         new_phase.model_hints = model_hints
         self.phases[phase_name] = new_phase
+
     def add_phase_constituents(self, phase_name, constituents):
         """
         Add a phase.
@@ -454,6 +454,7 @@ class Database(object): #pylint: disable=R0902
         except KeyError:
             print("Undefined phase "+phase_name)
             raise
+
     def search(self, query):
         """
         Search for parameters matching the specified query.
@@ -480,4 +481,3 @@ class Database(object): #pylint: disable=R0902
         result = self._parameters.insert_multiple(self._parameter_queue)
         self._parameter_queue = []
         return result
-
