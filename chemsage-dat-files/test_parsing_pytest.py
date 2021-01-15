@@ -637,6 +637,7 @@ full_parses = [
 
     # Data files from publications
     ("CuZnFeCl-Viitala (1).dat", ''),
+    ("Pb-Zn-Cu-Fe-Cl-stoich-only.dat", ''),
 ]
 
 

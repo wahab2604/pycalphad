@@ -156,10 +156,8 @@ class Endmember():
             T_min = interval.T_max
         return Piecewise(*expr_cond_pairs, evaluate=False)
 
-    @property
-    def constituent_array(self):
-        all_species = self.species_name.upper().split(':')
-        return tuple((sp,) for sp in all_species)
+    def constituents(self, pure_elements: [str]) -> {str: float}:
+        return {el: amnt for el, amnt in zip(pure_elements, self.stoichiometry_pure_elements) if amnt != 0.0}
 
     @property
     def species_dict(self):
@@ -231,6 +229,15 @@ class _Phase:
     endmembers: [Endmember]
 
     def insert(self, dbf: Database, pure_elements: [str], gibbs_coefficient_idxs: [int], excess_coefficient_idxs: [int]):
+        """Enter this phase and its parameters into the Database.
+
+        This method should call:
+
+        * `dbf.add_phase`
+        * `dbf.add_phase_constituents`
+        * `dbf.add_parameter` (likely multiple times)
+
+        """
         raise NotImplementedError(f"Subclass {type(self).__name__} of _Phase must implement `insert` to add the phase, constituents and parameters to the Database.")
 
 
@@ -242,8 +249,18 @@ class Phase_RealGas(_Phase):
 @dataclass
 class Phase_Stoichiometric(_Phase):
     def insert(self, dbf: Database, pure_elements: [str], gibbs_coefficient_idxs: [int], excess_coefficient_idxs: [int]):
-
-        dbf.add_phase(self.phase_name, {}, sublattices)
+        dbf.add_phase(self.phase_name, {}, [1.0])
+        assert len(self.endmembers) == 1  # stoichiometric phase
+        # define phase constituents as a species on a single sublattice, which is also the name of the phase
+        # first we need to add this species to the Database
+        sp_name = self.phase_name
+        sp = v.Species(sp_name, constituents=self.endmembers[0].constituents(pure_elements))
+        if sp in dbf.species:
+            raise ValueError(f"Species {sp} already exists in the Database. Phase {self.phase_name} cannot be added.")
+        else:
+            dbf.species.add(sp)
+        constituents = [[sp_name]]
+        dbf.add_phase_constituents(self.phase_name, constituents)
 
 
 @dataclass
@@ -630,7 +647,7 @@ def read_cs_dat(dbf: Database, fd):
     fd : file-like
         File descriptor.
     """
-    header, solution_phases, stoichiometric_phases, remaining_tokens = parse_cs_dat(fd.read())
+    header, solution_phases, stoichiometric_phases, remaining_tokens = parse_cs_dat(fd.read().upper())
     # add elements and their reference states
     for el, mass in zip(header.pure_elements, header.pure_elements_mass):
         dbf.elements.add(el)
