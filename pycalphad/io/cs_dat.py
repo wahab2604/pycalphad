@@ -628,10 +628,25 @@ def read_cs_dat(dbf: Database, fd):
         File descriptor.
     """
     header, solution_phases, stoichiometric_phases, remaining_tokens = parse_cs_dat(fd.read())
-    num_pure_elements = len(header.pure_elements)
-    num_gibbs_coeffs = len(header.gibbs_coefficient_idxs)
-    num_excess_coeffs = len(header.excess_coefficient_idxs)
+    pure_elements = header.pure_elements
+    # add elements and their reference states
+    for el, mass in zip(pure_elements, header.pure_elements_mass):
+        dbf.elements.add(el)
+        # add element reference state data
+        dbf.refstates[el] = {
+            'mass': mass,
+            # the following metadata is not given in Chemsage files,
+            # but is standard for our Database files
+            'phase': None,
+            'H298': None,
+            'S298': None,
+        }
+    # Each phase subclass knows how to insert itself into the database.
+    # The insert method will appropriately insert all endmembers as well.
+    for parsed_phase in (*solution_phases, *stoichiometric_phases):
+        parsed_phase.insert(dbf, pure_elements, header.gibbs_coefficient_idxs, header.excess_coefficient_idxs)
 
-
+    # process all the parameters that got added with dbf.add_parameter
+    dbf.process_parameter_queue()
 
 Database.register_format("dat", read=read_cs_dat, write=None)
