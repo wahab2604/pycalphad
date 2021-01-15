@@ -621,8 +621,8 @@ full_parses = [
     ("C-O-Si.dat", ''),
     ("Fe-C.dat", ''),
     ("Fe2SiO4-Mg2SiO4.dat", ''),
-    ("O-H-EA.dat", ''),
-    ("Pitzer.dat", ''),
+    pytest.param("O-H-EA.dat", '', marks=pytest.mark.xfail),  # Real Gas model not supported
+    pytest.param("Pitzer.dat", '', marks=pytest.mark.xfail),  # Pitzer model not implemented
     ("subl-ex.dat", ''),
 
     # Data files from thermochimica `data/` directory

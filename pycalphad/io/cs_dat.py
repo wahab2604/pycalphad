@@ -242,11 +242,6 @@ class _Phase:
 
 
 @dataclass
-class Phase_RealGas(_Phase):
-    endmembers: [EndmemberRealGas]
-
-
-@dataclass
 class Phase_Stoichiometric(_Phase):
     def insert(self, dbf: Database, pure_elements: [str], gibbs_coefficient_idxs: [int], excess_coefficient_idxs: [int]):
         dbf.add_phase(self.phase_name, {}, [1.0])
@@ -262,10 +257,6 @@ class Phase_Stoichiometric(_Phase):
         constituents = [[sp_name]]
         dbf.add_phase_constituents(self.phase_name, constituents)
 
-
-@dataclass
-class Phase_Aqueous(_Phase):
-    endmembers: [EndmemberAqueous]
 
 
 @dataclass
@@ -289,6 +280,18 @@ class Phase_SUBQ(_Phase):
     subl_const_idx_pairs: [(int,)]
     quadruplets: [Quadruplet]
     excess_parameters: [ExcessQuadruplet]
+
+
+# TODO: not yet supported
+@dataclass
+class Phase_RealGas(_Phase):
+    endmembers: [EndmemberRealGas]
+
+
+# TODO: not yet supported
+@dataclass
+class Phase_Aqueous(_Phase):
+    endmembers: [EndmemberAqueous]
 
 
 def tokenize(instring, startline=0):
