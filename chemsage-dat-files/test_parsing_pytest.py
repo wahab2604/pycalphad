@@ -617,10 +617,10 @@ full_parses = [
     # Data files from FACT documentation
     # See https://gtt-technologies.de/software/chemapp/documentation/online-manual/
     ("Pb-Sn.dat", ''),
-    ("C-N-O.dat", ''),
+    pytest.param("C-N-O.dat", '', marks=pytest.mark.xfail),  # Uses Cp type parameters
     ("C-O-Si.dat", ''),
     ("Fe-C.dat", ''),
-    ("Fe2SiO4-Mg2SiO4.dat", ''),
+    pytest.param("Fe2SiO4-Mg2SiO4.dat", '', marks=pytest.mark.xfail),  # Uses Cp type parameters
     pytest.param("O-H-EA.dat", '', marks=pytest.mark.xfail),  # Real Gas model not supported
     pytest.param("Pitzer.dat", '', marks=pytest.mark.xfail),  # Pitzer model not implemented
     ("subl-ex.dat", ''),
@@ -631,9 +631,9 @@ full_parses = [
     ("W-Au-Ar-Ne-O_04.dat", ''),
     ("FeCuCbase.dat", ''),
     ("FeTiVO.dat", ''),
-    ("Kaye_NobleMetals.dat", ''),
+    pytest.param("Kaye_NobleMetals.dat", '', marks=pytest.mark.xfail),  # Uses QKTO model
     ("ZIRC-noSUBI.dat", ''),
-    ("test14.dat", ''),
+    pytest.param("test14.dat", '', marks=pytest.mark.xfail),  # Uses QKTO model
 
     # Data files from publications
     ("CuZnFeCl-Viitala (1).dat", ''),
