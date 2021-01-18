@@ -337,7 +337,7 @@ class ExcessQKTO(ExcessBase):
 
 
 @dataclass
-class _Phase:
+class PhaseBase:
     phase_name: str
     phase_type: str
     endmembers: [Endmember]
@@ -352,11 +352,11 @@ class _Phase:
         * `dbf.add_parameter` (likely multiple times)
 
         """
-        raise NotImplementedError(f"Subclass {type(self).__name__} of _Phase must implement `insert` to add the phase, constituents and parameters to the Database.")
+        raise NotImplementedError(f"Subclass {type(self).__name__} of PhaseBase must implement `insert` to add the phase, constituents and parameters to the Database.")
 
 
 @dataclass
-class Phase_Stoichiometric(_Phase):
+class Phase_Stoichiometric(PhaseBase):
     def insert(self, dbf: Database, pure_elements: [str], gibbs_coefficient_idxs: [int], excess_coefficient_idxs: [int]):
         # TODO: magnetic model hints? Are these why there are four numbers for
         # magnetic endmembers instead of two for solution phases? Add a raise in
@@ -376,7 +376,7 @@ class Phase_Stoichiometric(_Phase):
 
 
 @dataclass
-class Phase_CEF(_Phase):
+class Phase_CEF(PhaseBase):
     subl_ratios: [float]
     excess_parameters: [ExcessCEF]
     magnetic_afm_factor: float
@@ -444,7 +444,7 @@ class Phase_CEF(_Phase):
 
 
 @dataclass
-class Phase_SUBQ(_Phase):
+class Phase_SUBQ(PhaseBase):
     num_pairs: int
     num_quadruplets: int
     num_subl_1_const: int
@@ -462,13 +462,13 @@ class Phase_SUBQ(_Phase):
 
 # TODO: not yet supported
 @dataclass
-class Phase_RealGas(_Phase):
+class Phase_RealGas(PhaseBase):
     endmembers: [EndmemberRealGas]
 
 
 # TODO: not yet supported
 @dataclass
-class Phase_Aqueous(_Phase):
+class Phase_Aqueous(PhaseBase):
     endmembers: [EndmemberAqueous]
 
 
