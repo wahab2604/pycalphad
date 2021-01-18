@@ -703,24 +703,11 @@ def parse_excess_qkto(toks, num_excess_coeffs):
 
 def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     is_magnetic_phase_type = len(phase_type) == 5 and phase_type[4] == 'M'
+    sanitized_phase_type = phase_type[:4]  # drop the magnetic contribution, only used for matching later (i.e. SUBLM -> SUBL)
     if is_magnetic_phase_type:
-        phase_type = phase_type[:4]  # remove the 'M' to more generically handle magnetic phases in later matching
-        # Raise an error if the phase type does not support magnetism
-        # according to the table in 1.11.1 of the ChemApp documentation
-        # Some help on the phase codes from Table 1 of Eriksson and Hack,
-        # Metallurigcal Transactions B 21B (1990) 1013--1023.
-        # I couldn't figure out all the phase codes, so these are not supported
-        # in addition:
-        #   * Species chemical potential/boind energy formalism
-        #   * Binary defect formalism
-        #   * Davies formalism
-        #   * Helgeson-Tanger-Shock formalism (all flavors)
-        #   * Revised Helgeson-Kirkham-Flowers (HKF)
-        #   * C-H-O-S-N-Ar multicomponent fluid model
-        #   * Real gasess
-        invalid_magnetic_model_types = ('SUBI', 'GAYE', 'IDPZ', 'PITZ', 'SUBG', 'SUBQ', 'VIRA', 'VIRG', 'VIRL', 'VIRN')
-        if phase_type in invalid_magnetic_model_types:
-            raise ValueError(f"Magnetic model contributions for phase type {phase_type} ({phase_type+'M'}) is not permitted.")
+        allowed_magnetic_phase_types = ('RKMP', 'QKTO', 'SUBL', 'SUBM', 'SUBG', 'SUBQ', 'WAGN')
+        if sanitized_phase_type not in allowed_magnetic_phase_types:
+            raise ValueError(f'Magnetic phase type {phase_type} is only supported for {allowed_magnetic_phase_types}')
         magnetic_afm_factor = toks.parse(float)
         magnetic_structure_factor = toks.parse(float)
     else:
@@ -729,18 +716,18 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
 
     endmembers = []
     for _ in range(num_const):
-        if phase_type == 'PITZ':
+        if sanitized_phase_type == 'PITZ':
             endmembers.append(parse_endmember_aqueous(toks, num_pure_elements, num_gibbs_coeffs))
         else:
             endmembers.append(parse_endmember(toks, num_pure_elements, num_gibbs_coeffs))
-        if phase_type in ('QKTO',):
+        if sanitized_phase_type in ('QKTO',):
             # TODO: is this correct?
             # there's two additional numbers. they seem to always be 1.000 and 1, so we'll just throw them away
             toks.parse(float)
             toks.parse(int)
 
     # defining sublattice model
-    if phase_type in ('SUBL',):
+    if sanitized_phase_type in ('SUBL',):
         num_subl = toks.parse(int)
         subl_atom_fracs = toks.parseN(num_subl, float)
         # some phases have number of atoms after a colon in the phase name, e.g. SIGMA:30
@@ -756,24 +743,24 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
         num_endmembers = int(np.prod(subl_constituents))
         for _ in range(num_subl):
             _ = toks.parseN(num_endmembers, int)
-    elif phase_type in ('IDMX', 'RKMP', 'QKTO', 'PITZ'):
+    elif sanitized_phase_type in ('IDMX', 'RKMP', 'QKTO', 'PITZ'):
         subl_ratios = [1.0]
     else:
         raise NotImplemented(f"Phase type {phase_type} does not have method defined for determing the sublattice ratios")
 
     # excess terms
-    if phase_type in ('IDMX',):
+    if sanitized_phase_type in ('IDMX',):
         # No excess parameters
         excess_parameters = []
-    elif phase_type in ('PITZ',):
+    elif sanitized_phase_type in ('PITZ',):
         excess_parameters = parse_excess_parameters_pitz(toks, num_excess_coeffs)
-    elif phase_type in ('RKMP', 'SUBL'):
+    elif sanitized_phase_type in ('RKMP', 'SUBL'):
         # SUBL will have no excess parameters, but it will have the "0" terminator like it has excess parameters so we can use the excess parameter parsing to process it all the same.
         excess_parameters = []
         if is_magnetic_phase_type:
             excess_parameters.extend(parse_excess_magnetic_parameters(toks))
         excess_parameters.extend(parse_excess_parameters(toks, num_excess_coeffs))
-    elif phase_type in ('QKTO',):
+    elif sanitized_phase_type in ('QKTO',):
         excess_parameters = parse_excess_qkto(toks, num_excess_coeffs)
     return Phase_CEF(phase_name, phase_type, endmembers, subl_ratios, excess_parameters, magnetic_afm_factor=magnetic_afm_factor, magnetic_structure_factor=magnetic_structure_factor)
 
