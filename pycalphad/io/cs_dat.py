@@ -159,24 +159,38 @@ class Endmember():
     def constituents(self, pure_elements: [str]) -> {str: float}:
         return {el: amnt for el, amnt in zip(pure_elements, self.stoichiometry_pure_elements) if amnt != 0.0}
 
-    @property
-    def species_dict(self):
-        # Assumes that species are all pure elements, this may not be correct if
-        # there are associates defined, but it's not clear if associates are
-        # allowed for multi-sublattice phases (e.g. SUBL) because I don't see
-        # a straightforward way to determine the pure element composition of
-        # an individual species. It would be possible for a single sublattice
-        # endmember (e.g. from RKMP) because there species_name only contains
-        # one species and the pure element stoichiometries are given, by
-        # comparison, the species_name for SUBL have multiple species.
-        all_species = self.species_name.upper().split(':')
-        return {sp_str: v.Species(sp_str) for sp_str in all_species}
+    def constituent_array(self) -> [[str]]:
+        return [[sp] for sp in self.species_name.split(':')]
+
+    def species(self, pure_elements) -> [v.Species]:
+        if len(self.species_name.split(':')) > 1:
+            # If given in sublattice notation, assume species are pure elements
+            # i.e. multi-sublattice models cannot have associates
+            all_species = self.species_name.split(':')
+            return np.unique([v.Species(sp_str) for sp_str in all_species]).tolist()
+        else:
+            # We only have one sublattice, this can be a non-pure element species
+            return [v.Species(self.species_name, constituents=self.constituents(pure_elements))]
+
+    def insert(self, dbf: Database, phase_name: str, pure_elements: [str], gibbs_coefficient_idxs: [int]):
+        dbf.add_parameter('G', phase_name, self.constituent_array(),
+                          0, self.expr(gibbs_coefficient_idxs), force_insert=False)
 
 
 @dataclass
 class EndmemberMagnetic(Endmember):
     curie_temperature: float
     magnetic_moment: float
+
+    def insert(self, dbf: Database, phase_name: str, pure_elements: [str], gibbs_coefficient_idxs: [int]):
+        # add Gibbs energy
+        super().insert(dbf, phase_name, pure_elements, gibbs_coefficient_idxs)
+
+        # also add magnetic parameters
+        dbf.add_parameter('BMAG', phase_name, self.constituent_array(),
+                          0, self.magnetic_moment, force_insert=False)
+        dbf.add_parameter('TC', phase_name, self.constituent_array(),
+                          0, self.curie_temperature, force_insert=False)
 
 
 @dataclass
@@ -188,10 +202,16 @@ class EndmemberRealGas(Endmember):
     acentric_factor: float
     dipole_moment: float
 
+    def insert(*args, **kwargs):
+        raise NotImplementedError("Inserting parameters for real gas Endmembers is not supported.")
+
 
 @dataclass
 class EndmemberAqueous(Endmember):
     charge: float
+
+    def insert(*args, **kwargs):
+        raise NotImplementedError("Inserting parameters for aqueous Endmembers is not supported.")
 
 
 @dataclass
@@ -204,7 +224,95 @@ class EndmemberSUBQ(Endmember):
 class ExcessCEF:
     interacting_species_idxs: [int]
     parameter_order: int
-    parameters: [float]
+    coefficients: [float]
+
+    def expr(self, indices):
+        """Return an expression for the energy in this temperature interval"""
+        energy = S.Zero
+        # Add fixed energy terms
+        energy += sum([C*EXCESS_TERMS[i] for C, i in zip(self.coefficients, indices)])
+        return energy
+
+    def _map_const_idxs_to_subl_idxs(self, num_subl_species: [int]) -> [[int]]:
+        """
+        Converts from one-indexed linear phase species indices to zero-indexed
+        sublattice species indices.
+
+        Parameters
+        ----------
+        num_subl_species: [int]
+            Number of species in each sublattice, i.e. [1, 2, 1] could
+            correspond to a sublattice model of [['A'], ['A', 'B'], ['C']]
+
+        Returns
+        -------
+        [[int]] - a list of species index lists
+
+        Examples
+        --------
+        >>> assert ExcessCEF([1, 2, 3, 4], 0, [0])._map_const_idxs_to_subl_idxs([2, 3]) == [[0, 1], [0, 1]]
+        >>> assert ExcessCEF([1, 3, 4], 0, [0])._map_const_idxs_to_subl_idxs([2, 3]) == [[0], [0, 1]]
+        >>> assert ExcessCEF([1, 2], 0, [0])._map_const_idxs_to_subl_idxs([4]) == [[0, 1]]
+        >>> assert ExcessCEF([1, 2, 3], 0, [0])._map_const_idxs_to_subl_idxs([3]) == [[0, 1, 2]]
+        >>> assert ExcessCEF([1, 2, 3, 4], 0, [0])._map_const_idxs_to_subl_idxs([1, 1, 2]) == [[0], [0], [0, 1]]
+        """
+        cum_num_subl_species = np.cumsum(num_subl_species)
+        # initialize an empty sublattice model
+        subl_species_idxs = [[] for _ in range(len(num_subl_species))]
+        for linear_idx in self.interacting_species_idxs:
+            # Find which sublattice this species belongs to by seeing that the
+            # linear_idx is contained within the cumulative number of species
+            # on each sublattice
+            subl_idx = (cum_num_subl_species >= linear_idx).tolist().index(True)
+            # Determine the index of the species within the sublattice
+            # This is still the one-indexed value
+            if subl_idx == 0:
+                subl_sp_idx = linear_idx
+            else:
+                subl_sp_idx = linear_idx - cum_num_subl_species[subl_idx - 1]
+            # convert one-indexed species index to zero-indexed
+            subl_sp_idx -= 1
+            # add the species index to the right sublattice
+            subl_species_idxs[subl_idx].append(subl_sp_idx)
+        # all sublattices must be occupied
+        assert all(len(subl) > 0 for subl in subl_species_idxs)
+        return subl_species_idxs
+
+    def constituent_array(self, phase_constituents: [[str]]) -> [[str]]:
+        """
+        Return the constituent array of this interaction using the entire phase
+        sublattice model.
+
+        This doesn't take into account any re-ordering of the phase_constituents
+        or interacting_species_idxs. All mapping on to proper v.Species objects
+        occurs in Database.add_parameter.
+
+        Examples
+        --------
+        >>> phase_constituents = [['A'], ['A', 'B'], ['A', 'B', 'C']]
+        >>> ex = ExcessCEF([1, 2, 4, 6], 0, [0])
+        >>> ix_const_arr = ex.constituent_array(phase_constituents)
+        >>> assert ix_const_arr == [['A'], ['A'], ['A', 'C']]
+        """
+        num_subl_species = [len(subl) for subl in phase_constituents]
+        subl_species_idxs = self._map_const_idxs_to_subl_idxs(num_subl_species)
+        return [[phase_constituents[subl_idx][idx] for idx in subl] for subl_idx, subl in enumerate(subl_species_idxs)]
+
+    def insert(self, dbf: Database, phase_name: str, phase_constituents: [[str]], excess_coefficient_idxs: [int]):
+        """
+        Requires all Species in dbf.species to be defined.
+        """
+        # TODO: sorting of interaction. For any excess interaction of order
+        # v>0 the order of species matters due to a (X_A - X_B)^v term. Usually
+        # CALPHAD implementations sort the elements in alphabetic order, but
+        # this sorting is not enforced in the ChemSage DAT format. The question
+        # is whether ChemSage would convert these to alphabetic order (and flip)
+        # the sign of the interaction appropriately, or whether the order of
+        # X_A - X_B is preserved even if A comes after B alphabetically. For now,
+        # we'll just leave the order as intended, though the pycalphad Model
+        # implementation may flip the order on us, needs to be checked.
+        const_array = self.constituent_array(phase_constituents)
+        dbf.add_parameter('L', phase_name, const_array, self.parameter_order, self.expr(excess_coefficient_idxs), force_insert=False)
 
 
 @dataclass
@@ -213,6 +321,9 @@ class ExcessCEFMagnetic:
     parameter_order: int
     curie_temperature: float
     magnetic_moment: float
+
+    def insert(self, *args, **kwargs):
+        raise NotImplementedError("Inserting magnetic excess parameters is not supported.")
 
 
 @dataclass
@@ -244,6 +355,9 @@ class _Phase:
 @dataclass
 class Phase_Stoichiometric(_Phase):
     def insert(self, dbf: Database, pure_elements: [str], gibbs_coefficient_idxs: [int], excess_coefficient_idxs: [int]):
+        # TODO: magnetic model hints? Are these why there are four numbers for
+        # magnetic endmembers instead of two for solution phases? Add a raise in
+        # the parser instead of parsing these into nothing to find the examples.
         dbf.add_phase(self.phase_name, {}, [1.0])
         assert len(self.endmembers) == 1  # stoichiometric phase
         # define phase constituents as a species on a single sublattice, which is also the name of the phase
@@ -258,11 +372,72 @@ class Phase_Stoichiometric(_Phase):
         dbf.add_phase_constituents(self.phase_name, constituents)
 
 
-
 @dataclass
 class Phase_CEF(_Phase):
     subl_ratios: [float]
     excess_parameters: [ExcessCEF]
+    magnetic_afm_factor: float
+    magnetic_structure_factor: float
+
+    def insert(self, dbf: Database, pure_elements: [str], gibbs_coefficient_idxs: [int], excess_coefficient_idxs: [int]):
+        if self.magnetic_afm_factor is not None and self.magnetic_structure_factor is not None:
+            # This is a magnetic model. I assumed IHJ model because I cannot
+            # find any details for which model is used in the ChemSage docs.
+            model_hints = {
+                # The TDB syntax would define the AFM factor for FCC as -3
+                # while ChemSage defines +0.333. This is likely because the
+                # model divides by the AFM factor (-1/3). We convert the AFM
+                # factor to the version used in the TDB/Model.
+                'ihj_magnetic_afm_factor': -1/self.magnetic_afm_factor,
+                'ihj_magnetic_structure_factor': self.magnetic_structure_factor,
+            }
+        else:
+            model_hints = {}
+
+        dbf.add_phase(self.phase_name, model_hints=model_hints, sublattices=self.subl_ratios)
+
+        # Before we add parameters, we need to first add all the species to dbf,
+        # since dbf.add_parameter takes a constituent array of string species
+        # names which are mapped to Species objects
+        for endmember in self.endmembers:
+            for sp in endmember.species(pure_elements):
+                invalid_shared_names = [(sp.name == esp.name and sp != esp) for esp in dbf.species]
+                if any(invalid_shared_names):
+                    # names match some already  but constituents do not
+                    raise ValueError(f"A Species named {sp.name} (defined for phase {self.phase_name}) already exists in the database's species ({dbf.species}), but the constituents do not match.")
+                dbf.species.add(sp)
+
+        # Construct constituents for this phase, this loop could be merged with
+        # the parameter additions above (it's not dependent like the species
+        # step), but we are keeping it logically separate to make it clear how
+        # it's working. This assumes that all constituents are present in
+        # endmembers (i.e. there are no endmembers that are implicit).
+        constituents = [[] for _ in range(len(self.subl_ratios))]
+        for endmember in self.endmembers:
+            for subl, const_subl in zip(endmember.constituent_array(), constituents):
+                const_subl.extend(subl)
+        # TODO:
+        # constituent array now has all the constituents in every sublattice,
+        # e.g. it could be [['A', 'A'], ['D', 'B']]
+        # the question is whether the parameters are in typical Calphad
+        # alphabetically sorted or if they are in FACTSAGE pure element order
+        # for now, we assume alphabetical sorted order. This can easily be
+        # tested by having a single phase L1 model in FACTSAGE/Thermochimica.
+        sorted_constituents = [sorted(np.unique(ca)) for ca in constituents]
+        dbf.add_phase_constituents(self.phase_name, sorted_constituents)
+
+        # Now that all the species are in the database, we are free to add the parameters
+        # First for endmembers
+        for endmember in self.endmembers:
+            endmember.insert(dbf, self.phase_name, pure_elements, gibbs_coefficient_idxs)
+
+        # Now for excess parameters
+        # TODO: We add them last since they depend on the phase's constituent
+        # array. As discussed in ExcessCEF.insert, we use the built constituent
+        # order above, but some models (e.g. SUBL) define the phase models
+        # internally and this is thrown away by the parser currently.
+        for excess_param in self.excess_parameters:
+            excess_param.insert(dbf, self.phase_name, constituents, excess_coefficient_idxs)
 
 
 @dataclass
@@ -294,8 +469,11 @@ class Phase_Aqueous(_Phase):
     endmembers: [EndmemberAqueous]
 
 
-def tokenize(instring, startline=0):
-    return TokenParser('\n'.join(instring.splitlines()[startline:]).split())
+def tokenize(instring, startline=0, force_upper=False):
+    if force_upper:
+        return TokenParser('\n'.join(instring.upper().splitlines()[startline:]).split())
+    else:
+        return TokenParser('\n'.join(instring.splitlines()[startline:]).split())
 
 
 def parse_header(toks: TokenParser) -> Header:
@@ -526,9 +704,15 @@ def parse_excess_qkto(toks, num_excess_coeffs):
 def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_excess_coeffs, num_const):
     magnetic_phase_type = len(phase_type) == 5 and phase_type[4] == 'M'
     if magnetic_phase_type:
-        # ignore first two numbers, these don't seem to be meaningful and always come in 2 regardless of # of sublattices
-        # TODO: these are magnetic, not garbage
-        toks.parseN(2, float)
+        # TODO: set the phase_type to phase_type[:4] so we don't need to add the
+        # magnetic versions of the models all over the place. We also could then
+        # raise if a model that does not support magnetism tries to add magnetism.
+        magnetic_afm_factor = toks.parse(float)
+        magnetic_structure_factor = toks.parse(float)
+    else:
+        magnetic_afm_factor = None
+        magnetic_structure_factor = None
+
     endmembers = []
     for _ in range(num_const):
         if phase_type == 'PITZ':
@@ -577,7 +761,7 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
         excess_parameters.extend(parse_excess_parameters(toks, num_excess_coeffs))
     elif phase_type in ('QKTO',):
         excess_parameters = parse_excess_qkto(toks, num_excess_coeffs)
-    return Phase_CEF(phase_name, phase_type, endmembers, subl_ratios, excess_parameters)
+    return Phase_CEF(phase_name, phase_type, endmembers, subl_ratios, excess_parameters, magnetic_afm_factor=magnetic_afm_factor, magnetic_structure_factor=magnetic_structure_factor)
 
 
 def parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const):
@@ -654,6 +838,7 @@ def read_cs_dat(dbf: Database, fd):
     # add elements and their reference states
     for el, mass in zip(header.pure_elements, header.pure_elements_mass):
         dbf.elements.add(el)
+        dbf.species.add(v.Species(el))
         # add element reference state data
         dbf.refstates[el] = {
             'mass': mass,

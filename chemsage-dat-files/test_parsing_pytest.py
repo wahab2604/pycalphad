@@ -546,9 +546,9 @@ def test_parse_excess_parameters():
     assert excess_terms[2].interacting_species_idxs == [1, 2]
     assert excess_terms[3].interacting_species_idxs == [1, 3]
     assert len(excess_terms) == 4
-    assert np.allclose(excess_terms[1].parameters, [19300.0, 0.0, 0.0, 0.0])
-    assert np.allclose(excess_terms[3].parameters, [-34671.0, 0.0, 0.0, 0.0])
-    assert [len(xt.parameters) for xt in excess_terms] == [4, 4, 4, 4]
+    assert np.allclose(excess_terms[1].coefficients, [19300.0, 0.0, 0.0, 0.0])
+    assert np.allclose(excess_terms[3].coefficients, [-34671.0, 0.0, 0.0, 0.0])
+    assert [len(xt.coefficients) for xt in excess_terms] == [4, 4, 4, 4]
 
 
 def test_gibbs_interval_construction():
@@ -580,18 +580,18 @@ def test_endmember_expression_construction_RKMP():
  0.00000000     0.00000000
  1 0.00000000       0.00
     """
-    toks = tokenize(em_str)
+    toks = tokenize(em_str, force_upper=True)
     em = parse_endmember(toks, 2, 6)
     expr = em.expr([1, 2, 3, 4, 5, 6])
     assert isinstance(expr, Piecewise)
     assert len(expr.as_expr_set_pairs()) == 3
-    assert em.constituent_array == (('C',),)
-    assert len(em.species_dict) == 1
+    assert em.constituent_array() == [['C']]
+    assert len(em.species(['FE', 'C'])) == 1
 
 
 def test_endmember_expression_construction_SUBL():
     em_str = """ Co:Cr:Co
-   4  3    0.0    1.0
+   4  3    0.866666667    0.133333333
   2600.0000      712234.84     -11.891684     -21.741391     0.47346994E-03
  -.53611800E-07 -28855.579
  1 -386.20250      99.00
@@ -602,13 +602,13 @@ def test_endmember_expression_construction_SUBL():
  0.00000000     0.00000000
  1 0.00000000       0.00
     """
-    toks = tokenize(em_str)
+    toks = tokenize(em_str, force_upper=True)
     em = parse_endmember(toks, 2, 6)
     expr = em.expr([1, 2, 3, 4, 5, 6])
     assert isinstance(expr, Piecewise)
     assert len(expr.as_expr_set_pairs()) == 3
-    assert em.constituent_array == (('CO',), ('CR',), ('CO',))
-    assert len(em.species_dict) == 2
+    assert em.constituent_array() == [['CO'], ['CR'], ['CO']]
+    assert len(em.species(['CO', 'CR'])) == 2
 
 
 full_parses = [
