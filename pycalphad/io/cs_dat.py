@@ -221,17 +221,8 @@ class EndmemberSUBQ(Endmember):
 
 
 @dataclass
-class ExcessCEF:
+class ExcessBase:
     interacting_species_idxs: [int]
-    parameter_order: int
-    coefficients: [float]
-
-    def expr(self, indices):
-        """Return an expression for the energy in this temperature interval"""
-        energy = S.Zero
-        # Add fixed energy terms
-        energy += sum([C*EXCESS_TERMS[i] for C, i in zip(self.coefficients, indices)])
-        return energy
 
     def _map_const_idxs_to_subl_idxs(self, num_subl_species: [int]) -> [[int]]:
         """
@@ -299,6 +290,22 @@ class ExcessCEF:
         return [[phase_constituents[subl_idx][idx] for idx in subl] for subl_idx, subl in enumerate(subl_species_idxs)]
 
     def insert(self, dbf: Database, phase_name: str, phase_constituents: [[str]], excess_coefficient_idxs: [int]):
+        raise NotImplementedError(f"Subclass {type(self).__name__} of ExcessBase must implement `insert` to add the phase, constituents and parameters to the Database.")
+
+
+@dataclass
+class ExcessCEF(ExcessBase):
+    parameter_order: int
+    coefficients: [float]
+
+    def expr(self, indices):
+        """Return an expression for the energy in this temperature interval"""
+        energy = S.Zero
+        # Add fixed energy terms
+        energy += sum([C*EXCESS_TERMS[i] for C, i in zip(self.coefficients, indices)])
+        return energy
+
+    def insert(self, dbf: Database, phase_name: str, phase_constituents: [[str]], excess_coefficient_idxs: [int]):
         """
         Requires all Species in dbf.species to be defined.
         """
@@ -316,19 +323,15 @@ class ExcessCEF:
 
 
 @dataclass
-class ExcessCEFMagnetic:
-    interacting_species_idxs: [int]
+class ExcessCEFMagnetic(ExcessBase):
     parameter_order: int
     curie_temperature: float
     magnetic_moment: float
 
-    def insert(self, *args, **kwargs):
-        raise NotImplementedError("Inserting magnetic excess parameters is not supported.")
 
 
 @dataclass
-class ExcessQKTO:
-    interacting_species_idxs: [int]
+class ExcessQKTO(ExcessBase):
     interacing_species_type: [int]
     coefficients: [float]
 
