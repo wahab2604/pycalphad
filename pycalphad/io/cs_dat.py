@@ -375,7 +375,9 @@ class Phase_Stoichiometric(PhaseBase):
         # first we need to add this species to the Database
         sp_name = self.phase_name
         sp = v.Species(sp_name, constituents=self.endmembers[0].constituents(pure_elements))
-        if sp in dbf.species:
+        # sp in dbf.species compares hashes, which only compare names. We need
+        # to compare equality to see if they have the same constituents
+        if sp in dbf.species and not any(sp == dbf_sp for dbf_sp in dbf.species):
             raise ValueError(f"Species {sp} already exists in the Database. Phase {self.phase_name} cannot be added.")
         else:
             dbf.species.add(sp)
