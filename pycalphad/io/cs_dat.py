@@ -154,6 +154,8 @@ class Endmember():
         for interval in self.intervals:
             expr_cond_pairs.append(interval.expr_cond_pair(indices, T_min=T_min))
             T_min = interval.T_max
+        # a (expr, True) condition must be at the end
+        expr_cond_pairs.append((S.Zero, S.true))
         return Piecewise(*expr_cond_pairs, evaluate=False)
 
     def constituents(self, pure_elements: [str]) -> {str: float}:

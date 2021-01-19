@@ -584,7 +584,7 @@ def test_endmember_expression_construction_RKMP():
     em = parse_endmember(toks, 2, 6)
     expr = em.expr([1, 2, 3, 4, 5, 6])
     assert isinstance(expr, Piecewise)
-    assert len(expr.as_expr_set_pairs()) == 3
+    assert len(expr.as_expr_set_pairs()) == 4  # extra for (0, True)
     assert em.constituent_array() == [['C']]
     assert len(em.species(['FE', 'C'])) == 1
 
@@ -606,7 +606,7 @@ def test_endmember_expression_construction_SUBL():
     em = parse_endmember(toks, 2, 6)
     expr = em.expr([1, 2, 3, 4, 5, 6])
     assert isinstance(expr, Piecewise)
-    assert len(expr.as_expr_set_pairs()) == 3
+    assert len(expr.as_expr_set_pairs()) == 4  # extra for (0, True)
     assert em.constituent_array() == [['CO'], ['CR'], ['CO']]
     assert len(em.species(['CO', 'CR'])) == 2
 
