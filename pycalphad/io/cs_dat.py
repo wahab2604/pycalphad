@@ -14,6 +14,7 @@ Careful of a gotcha:  `obj.setParseAction` modifies the object in place but call
 """
 
 import numpy as np
+import itertools
 from dataclasses import dataclass
 from pycalphad import Database
 from collections import deque
@@ -123,24 +124,6 @@ class IntervalCP(IntervalBase):
 
 
 @dataclass
-class Quadruplet:
-    quadruplet_idxs: [int]  # exactly four
-    quadruplet_coordinations: [float]  # exactly four
-
-
-@dataclass
-class ExcessQuadruplet:
-    mixing_type: int
-    mixing_code: str
-    mixing_const: [int]  # exactly four
-    mixing_exponents: [int]  # exactly four
-    junk: [float]  # exactly twelve
-    additional_mixing_const: int
-    additional_mixing_exponent: int
-    excess_coeffs: [float]
-
-
-@dataclass
 class Endmember():
     species_name: str
     gibbs_eq_type: str
@@ -214,12 +197,6 @@ class EndmemberAqueous(Endmember):
 
     def insert(*args, **kwargs):
         raise NotImplementedError("Inserting parameters for aqueous Endmembers is not supported.")
-
-
-@dataclass
-class EndmemberSUBQ(Endmember):
-    stoichiometry_quadruplet: [float]
-    zeta: float
 
 
 @dataclass
@@ -456,6 +433,131 @@ class Phase_CEF(PhaseBase):
             excess_param.insert(dbf, self.phase_name, unique_constituents, excess_coefficient_idxs)
 
 
+def get_species(*constituents: [str]) -> v.Species:
+    """Return a Species for a pair or quadruplet given by constituents
+
+    Examples
+    --------
+        get_species('A_1.0', 'B_1.0')
+    """
+    name = ''.join(constituents)
+    constituent_dict = {}
+    # using get() will increment c instead of overriding if c is already defined
+    for c in constituents:
+        constituent_dict[c] = constituent_dict.get(c, 0.0) + 1.0
+    return v.Species(name, constituents=constituent_dict)
+
+
+def quasichemical_pair_species(As, Xs):
+    """
+    Return all possible Species objects corresponding to the A:X pairs.
+
+    TODO: must be careful with As having repeat names. If the
+    same element is repeated in a sublattice, then it will generate the
+    correct number species, but some will be equivalent, i.e.
+    len(species) != len(set(species))
+    """
+    return [get_species(A, X) for A, X in itertools.product(As, Xs)]
+
+
+def quasichemical_quadruplet_species(As, Xs):
+    """
+    Return all possible Species objects corresponding to AB:XY quadruplets.
+
+    TODO: must be careful with As and Xs having repeat names. If the
+    same element is repeated in a sublattice, then it will generate the
+    correct number species, but some will be equivalent, i.e.
+    len(species) != len(set(species))
+    """
+    ABs = itertools.combinations_with_replacement(As, 2)
+    XYs = itertools.combinations_with_replacement(Xs, 2)
+    return [get_species(A, B, X, Y) for (A, B), (X, Y) in itertools.product(ABs, XYs)]
+
+
+def rename_element_charge(element, charge):
+    """We use the _ to separate so we have something to split on."""
+    if charge >= 0:
+        return f'{element}_{charge}'
+    else:
+        return f'{element}_{abs(charge)}'
+
+
+@dataclass
+class EndmemberSUBQ(Endmember):
+    stoichiometry_quadruplet: [float]
+    zeta: float
+
+    def insert(self, dbf: Database, phase_name: str, constituent_array: [str], gibbs_coefficient_idxs: [int]):
+        # Here the constituent array should be the pair name using the corrected
+        # names, i.e. CU1.0CL1.0
+        dbf.add_parameter('G', phase_name, constituent_array, 0, self.expr(gibbs_coefficient_idxs), force_insert=False)
+
+
+@dataclass
+class Quadruplet:
+    quadruplet_idxs: [int]  # exactly four
+    quadruplet_coordinations: [float]  # exactly four
+
+    def insert(self, dbf: Database, phase_name: str, As: [str], Xs: [str]):
+        """Add a Z_i_AB:XY parameter for each species defined in the quadruplet"""
+        linear_species = [''] + As + Xs  # the leading '' element pads for one-indexed quadruplet_idxs
+        A, B, X, Y = tuple(linear_species[idx] for idx in self.quadruplet_idxs)
+        constituent_array = [get_species(A, B, X, Y).name]
+        added_species = set()
+        for i, Z in zip((A, B, X, Y), self.quadruplet_coordinations):
+            # diffusing species, i, will mark Z_i_AB:XY
+            sp_i = get_species(i)
+            # avoid adding duplicate Z parameters, each should be unique
+            if sp_i not in added_species:
+                dbf.add_parameter('Z', phase_name, constituent_array, 0, Z, diffusing_species=sp_i, force_insert=False)
+                added_species.add(sp_i)
+
+
+@dataclass
+class ExcessQuadruplet:
+    mixing_type: int
+    mixing_code: str
+    mixing_const: [int]  # exactly four
+    mixing_exponents: [int]  # exactly four
+    junk: [float]  # exactly twelve
+    additional_mixing_const: int
+    additional_mixing_exponent: int
+    excess_coeffs: [float]
+
+    # TODO: implement
+    def expr(self):
+        return 0.0
+
+    def constituent_array(self, As: [str], Xs: [str]):
+        """Return the pure quadruplets that make up this mixed quadruplet
+
+        The As and Xs are candidates over the whole phase.
+
+        The internal As and Xs are the actual ones for endmembers
+        """
+        linear_species = [''] + As + Xs  # the leading '' element pads for one-indexed quadruplet_idxs
+        A, B, X, Y = tuple(linear_species[idx] for idx in self.mixing_const)
+        AAs = np.unique([(A, A), (B, B)], axis=0).tolist()
+        XXs = np.unique([(X, X), (Y, Y)], axis=0).tolist()
+        return [get_species(A, B, X, Y).name for (A, B), (X, Y) in itertools.product(AAs, XXs)]
+
+    def insert(self, dbf: Database, phase_name: str, As: [str], Xs: [str]):
+        """
+        AB:XX means mixing between AA:XX - BB:XX, so we can
+        enter the constituent array as normal with mixing between them
+
+        TODO: This is probably not implemented correctly because we ignore
+        mixing code Q vs. G.
+
+        I think:
+        G :: X_AB:XY (i.e. y_constituent)
+        Q :: Y_A
+        """
+        parameter_order = 0
+        dbf.add_parameter('L', phase_name, self.constituent_array(As, Xs),
+                          parameter_order, self.expr(), force_insert=False)
+
+
 @dataclass
 class Phase_SUBQ(PhaseBase):
     num_pairs: int
@@ -471,6 +573,81 @@ class Phase_SUBQ(PhaseBase):
     subl_const_idx_pairs: [(int,)]
     quadruplets: [Quadruplet]
     excess_parameters: [ExcessQuadruplet]
+
+    def insert(self, dbf: Database, pure_elements: [str], gibbs_coefficient_idxs: [int], excess_coefficient_idxs: [int]):
+        # There are some tricky things to handle for quadruplet formalism
+        # All AB:XY quadruplets are the constituents and they exist on one
+        # sublattice.
+        # 1. We need to store the endmember energies which are defined in A:X
+        #    pairs. We'll store these as the pairs and it will be up to the
+        #    Model implementation to query for these parameters.
+        # 2. We need to store the coordination numbers of Z^i_AB:XY defined in
+        #    we'll AB:XY quadruplets. We'll store the Z parameter for the
+        #    quadrpulet configuration and use the diffusing species to indicate
+        #    the element that coordination number belongs to. We store these
+        #    like endmembers for AB:XY quadruplets.
+        # 3. We need to store the excess parameters, defined in terms of AB:XY
+        #    quadruplets. AB:XX means mixing between AA:XX - BB:XX, so we can
+        #    enter the constituent array as normal with mixing between them.
+
+        # One thing we'll have to keep track of is repeated species that have
+        # different charge. Since pycalphad usually uses Species to
+        # differentiate charged species, for example Species('CU', charge=1)
+        # vs. Species('CU', charge=2) and we are using Speices to refer to a
+        # quadruplet which may have both CU+1 and CU+2 states inside, we need
+        # to add an additional qualifier to the name of the elements in the
+        # species so that we can clearly differentiate the (CU+1 CU+1):(XY)
+        # quadruplet from the (CU+2 CU+2):(XY) quadruplet. We do that by adding
+        # the charge to the name (without +/-), i.e. CU_1 or CU_1.0. One benefit
+        # of doing this is that we don't have to worry about Species name
+        # collisions within the Database.
+
+        # First: get the pair and quadruplet species added to the database:
+        # Here we rename the species names according to their charges, to avoid creating duplicate pairs/quadruplets
+        As = [rename_element_charge(el, chg) for el, chg in zip(self.subl_1_const, self.subl_1_charges)]
+        Xs = [rename_element_charge(el, chg) for el, chg in zip(self.subl_2_const, self.subl_2_charges)]
+        # Add the quadruplet species to the database, these are our constituents
+        quad_species = quasichemical_quadruplet_species(As, Xs)
+        dbf.species.update(quad_species)
+        # We also need to add the pair species to the list of Database species
+        # in order to make the endmember pair parameters insert correctly.
+        pair_species = quasichemical_pair_species(As, Xs)
+        dbf.species.update(pair_species)
+
+        # Second: add the phase and phase constituents
+        # TODO: model hints to identify this phase as MQMQA
+        dbf.add_phase(self.phase_name, model_hints={}, sublattices=[1.0])
+        dbf.add_phase_constituents(self.phase_name, [[sp.name for sp in quad_species]])
+
+        # Third: add the endmember (pair) Gibbs energies
+        # We assume that every pair that can exist is defined, i.e.
+        assert len(self.endmembers) == len(pair_species)
+        # TODO:
+        # Different charge states of endmember pairs are not well defined in the
+        # DAT format. It seems to be implicit in the stoichiometry, e.g. CuCl
+        # and CuCl2 refer to the CU_1.0 and CU_2.0 constituents, respectively.
+        # Maybe the "correct" way would be to give the candidate charges and
+        # determine which charge states are required to achieve a charge neutral
+        # pair. Instead we will go with a more straightforward method where we
+        # assume the pairs are in order of itertools.product(As, Xs). At least
+        # for the databases I have, that seems to be true. This also solves the
+        # problem of implicit vacancies in the endmember names, e.g. CVa is C.
+        for pair_sp, endmember in zip(pair_species, self.endmembers):
+            endmember.insert(dbf, self.phase_name, [pair_sp.name], gibbs_coefficient_idxs)
+
+        # Fourth: add parameters for coordinations
+        # TODO: for the quadruplets that are not specified here, the
+        # coordination numbers are calculated. Do we need to calculate the
+        # coordination numbers not specified here or can/should it wait until
+        # model?
+        for quadruplet in self.quadruplets:
+            quadruplet.insert(dbf, self.phase_name, As, Xs)
+
+        # Fifth: add excess parameters
+        for excess_param in self.excess_parameters:
+            excess_param.insert(dbf, self.phase_name, As, Xs)
+
+
 
 
 # TODO: not yet supported
