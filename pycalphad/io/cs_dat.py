@@ -328,6 +328,14 @@ class ExcessCEFMagnetic(ExcessBase):
     curie_temperature: float
     magnetic_moment: float
 
+    def insert(self, dbf: Database, phase_name: str, phase_constituents: [[str]], excess_coefficient_idxs: [int]):
+        """
+        Requires all Species in dbf.species to be defined.
+        """
+        # See the comment about sorting in ExcessCEF
+        const_array = self.constituent_array(phase_constituents)
+        dbf.add_parameter('TC', phase_name, const_array, self.parameter_order, self.curie_temperature, force_insert=False)
+        dbf.add_parameter('BMAG', phase_name, const_array, self.parameter_order, self.magnetic_moment, force_insert=False)
 
 
 @dataclass
@@ -426,7 +434,8 @@ class Phase_CEF(PhaseBase):
         # alphabetically sorted or if they are in FACTSAGE pure element order
         # for now, we assume alphabetical sorted order. This can easily be
         # tested by having a single phase L1 model in FACTSAGE/Thermochimica.
-        sorted_constituents = [sorted(np.unique(ca)) for ca in constituents]
+        unique_constituents = [np.unique(ca) for ca in constituents]
+        sorted_constituents = [sorted(ca) for ca in unique_constituents]
         dbf.add_phase_constituents(self.phase_name, sorted_constituents)
 
         # Now that all the species are in the database, we are free to add the parameters
@@ -440,7 +449,7 @@ class Phase_CEF(PhaseBase):
         # order above, but some models (e.g. SUBL) define the phase models
         # internally and this is thrown away by the parser currently.
         for excess_param in self.excess_parameters:
-            excess_param.insert(dbf, self.phase_name, constituents, excess_coefficient_idxs)
+            excess_param.insert(dbf, self.phase_name, unique_constituents, excess_coefficient_idxs)
 
 
 @dataclass
