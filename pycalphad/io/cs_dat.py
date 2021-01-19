@@ -157,8 +157,8 @@ class Endmember():
             # We only have one sublattice, this can be a non-pure element species
             return [v.Species(self.species_name, constituents=self.constituents(pure_elements))]
 
-    def insert(self, dbf: Database, phase_name: str, pure_elements: [str], gibbs_coefficient_idxs: [int]):
-        dbf.add_parameter('G', phase_name, self.constituent_array(),
+    def insert(self, dbf: Database, phase_name: str, constituent_array: [[str]], gibbs_coefficient_idxs: [int]):
+        dbf.add_parameter('G', phase_name, constituent_array,
                           0, self.expr(gibbs_coefficient_idxs), force_insert=False)
 
 
@@ -367,6 +367,8 @@ class Phase_Stoichiometric(PhaseBase):
 @dataclass
 class Phase_CEF(PhaseBase):
     subl_ratios: [float]
+    constituent_array: [[str]]
+    endmember_constituent_idxs: [[int]]
     excess_parameters: [ExcessCEF]
     magnetic_afm_factor: float
     magnetic_structure_factor: float
@@ -388,36 +390,47 @@ class Phase_CEF(PhaseBase):
 
         dbf.add_phase(self.phase_name, model_hints=model_hints, sublattices=self.subl_ratios)
 
-        # Before we add parameters, we need to first add all the species to dbf,
-        # since dbf.add_parameter takes a constituent array of string species
-        # names which are mapped to Species objects
-        for endmember in self.endmembers:
-            for sp in endmember.species(pure_elements):
-                invalid_shared_names = [(sp.name == esp.name and sp != esp) for esp in dbf.species]
-                if any(invalid_shared_names):
-                    # names match some already  but constituents do not
-                    raise ValueError(f"A Species named {sp.name} (defined for phase {self.phase_name}) already exists in the database's species ({dbf.species}), but the constituents do not match.")
-                dbf.species.add(sp)
+        print(self.subl_ratios)
+        # This does two things:
+        # 1. set the self.constituent_array
+        # 2. add species to the database
+        if self.constituent_array is None:
+            # Before we add parameters, we need to first add all the species to dbf,
+            # since dbf.add_parameter takes a constituent array of string species
+            # names which are mapped to Species objects
+            for endmember in self.endmembers:
+                for sp in endmember.species(pure_elements):
+                    invalid_shared_names = [(sp.name == esp.name and sp != esp) for esp in dbf.species]
+                    if any(invalid_shared_names):
+                        # names match some already  but constituents do not
+                        raise ValueError(f"A Species named {sp.name} (defined for phase {self.phase_name}) already exists in the database's species ({dbf.species}), but the constituents do not match.")
+                    dbf.species.add(sp)
 
-        # Construct constituents for this phase, this loop could be merged with
-        # the parameter additions above (it's not dependent like the species
-        # step), but we are keeping it logically separate to make it clear how
-        # it's working. This assumes that all constituents are present in
-        # endmembers (i.e. there are no endmembers that are implicit).
-        constituents = [[] for _ in range(len(self.subl_ratios))]
-        for endmember in self.endmembers:
-            for subl, const_subl in zip(endmember.constituent_array(), constituents):
-                const_subl.extend(subl)
+            # Construct constituents for this phase, this loop could be merged with
+            # the parameter additions above (it's not dependent like the species
+            # step), but we are keeping it logically separate to make it clear how
+            # it's working. This assumes that all constituents are present in
+            # endmembers (i.e. there are no endmembers that are implicit).
+
+            constituents = [[] for _ in range(len(self.subl_ratios))]
+            for endmember in self.endmembers:
+                for subl, const_subl in zip(endmember.constituent_array(), constituents):
+                    const_subl.extend(subl)
+            self.constituent_array = [np.unique(ca) for ca in constituents]
         # TODO:
         # constituent array now has all the constituents in every sublattice,
-        # e.g. it could be [['A', 'A'], ['D', 'B']]
+        # e.g. it could be [['A', 'B'], ['D', 'B']]
         # the question is whether the parameters are in typical Calphad
-        # alphabetically sorted or if they are in FACTSAGE pure element order
-        # for now, we assume alphabetical sorted order. This can easily be
-        # tested by having a single phase L1 model in FACTSAGE/Thermochimica.
-        unique_constituents = [np.unique(ca) for ca in constituents]
-        sorted_constituents = [sorted(ca) for ca in unique_constituents]
-        dbf.add_phase_constituents(self.phase_name, sorted_constituents)
+        # alphabetically sorted or if they are in ChemSage pure element order
+        # for now, we assume that the ChemSage order is the one that is used.
+        # This can easily be tested by having a single phase L1 model in
+        # ChemSage/Thermochimica.
+        else:
+            # add the species to the database
+            for subl in self.constituent_array:
+                for const in subl:
+                    dbf.species.add(v.Species(const))  # TODO: masses
+        dbf.add_phase_constituents(self.phase_name, self.constituent_array)
 
         # Now that all the species are in the database, we are free to add the parameters
         # First for endmembers
@@ -430,7 +443,7 @@ class Phase_CEF(PhaseBase):
         # order above, but some models (e.g. SUBL) define the phase models
         # internally and this is thrown away by the parser currently.
         for excess_param in self.excess_parameters:
-            excess_param.insert(dbf, self.phase_name, unique_constituents, excess_coefficient_idxs)
+            excess_param.insert(dbf, self.phase_name, self.constituent_array, excess_coefficient_idxs)
 
 
 def get_species(*constituents: [str]) -> v.Species:
@@ -931,13 +944,22 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
         subl_ratios = [num_atoms*subl_frac for subl_frac in subl_atom_fracs]
         # read the data used to recover the mass, it's redundant and doesn't need to be stored
         subl_constituents = toks.parseN(num_subl, int)
-        num_species = sum(subl_constituents)
-        _ = toks.parseN(num_species, str)
+        constituent_array = []
+        for num_subl_species in subl_constituents:
+            constituent_array.append(toks.parseN(num_subl_species, str))
         num_endmembers = int(np.prod(subl_constituents))
+        endmember_constituent_idxs = []
         for _ in range(num_subl):
-            _ = toks.parseN(num_endmembers, int)
+            endmember_constituent_idxs.append(toks.parseN(num_endmembers, int))
+        # endmember_constituents now is like [[1, 2, 3, 4], [1, 1, 1, 1]] for
+        # a two sublattice phase with (4, 1) constituents
+        # we want to invert this so each endmember is a pair, i.e.
+        # endmember_constituents = [[1, 1], [2, 1], [3, 1], [4, 1]]
+        endmember_constituent_idxs = list(zip(*endmember_constituent_idxs))
     elif sanitized_phase_type in ('IDMX', 'RKMP', 'QKTO', 'PITZ'):
         subl_ratios = [1.0]
+        constituent_array = None  # implictly defined by the endmembers
+        endmember_constituent_idxs = None
     else:
         raise NotImplemented(f"Phase type {phase_type} does not have method defined for determing the sublattice ratios")
 
@@ -955,7 +977,7 @@ def parse_phase_cef(toks, phase_name, phase_type, num_pure_elements, num_gibbs_c
         excess_parameters.extend(parse_excess_parameters(toks, num_excess_coeffs))
     elif sanitized_phase_type in ('QKTO',):
         excess_parameters = parse_excess_qkto(toks, num_excess_coeffs)
-    return Phase_CEF(phase_name, phase_type, endmembers, subl_ratios, excess_parameters, magnetic_afm_factor=magnetic_afm_factor, magnetic_structure_factor=magnetic_structure_factor)
+    return Phase_CEF(phase_name, phase_type, endmembers, subl_ratios, constituent_array, endmember_constituent_idxs, excess_parameters, magnetic_afm_factor=magnetic_afm_factor, magnetic_structure_factor=magnetic_structure_factor)
 
 
 def parse_phase_real_gas(toks, phase_name, phase_type, num_pure_elements, num_gibbs_coeffs, num_const):
@@ -1051,6 +1073,7 @@ def read_cs_dat(dbf: Database, fd):
             # miscibility gaps. We discard the duplicate phase definitions.
             print(f"Skipping phase {parsed_phase.phase_name} because it's already in the database.")
             continue
+        print(parsed_phase.phase_name)
         parsed_phase.insert(dbf, header.pure_elements, header.gibbs_coefficient_idxs, header.excess_coefficient_idxs)
         processed_phases.append(parsed_phase.phase_name)
 
