@@ -416,7 +416,7 @@ class Phase_CEF(PhaseBase):
             for endmember in self.endmembers:
                 for subl, const_subl in zip(endmember.constituent_array(), constituents):
                     const_subl.extend(subl)
-            self.constituent_array = [np.unique(ca) for ca in constituents]
+            self.constituent_array = [np.unique(ca).tolist() for ca in constituents]
         # TODO:
         # constituent array now has all the constituents in every sublattice,
         # e.g. it could be [['A', 'B'], ['D', 'B']]
@@ -434,8 +434,15 @@ class Phase_CEF(PhaseBase):
 
         # Now that all the species are in the database, we are free to add the parameters
         # First for endmembers
-        for endmember in self.endmembers:
-            endmember.insert(dbf, self.phase_name, pure_elements, gibbs_coefficient_idxs)
+        if self.endmember_constituent_idxs is None:
+            # we have to guess at the constituent array
+            for endmember in self.endmembers:
+                endmember.insert(dbf, self.phase_name, endmember.constituent_array(), gibbs_coefficient_idxs)
+        else:
+            # we know the constituent array from the indices
+            for endmember, const_idxs in zip(self.endmembers, self.endmember_constituent_idxs):
+                em_const_array = [self.constituent_array[i][sp_idx - 1] for i, sp_idx in enumerate(const_idxs)]
+                endmember.insert(dbf, self.phase_name, em_const_array, gibbs_coefficient_idxs)
 
         # Now for excess parameters
         # TODO: We add them last since they depend on the phase's constituent
