@@ -220,11 +220,11 @@ class ExcessBase:
 
         Examples
         --------
-        >>> assert ExcessCEF([1, 2, 3, 4], 0, [0])._map_const_idxs_to_subl_idxs([2, 3]) == [[0, 1], [0, 1]]
-        >>> assert ExcessCEF([1, 3, 4], 0, [0])._map_const_idxs_to_subl_idxs([2, 3]) == [[0], [0, 1]]
-        >>> assert ExcessCEF([1, 2], 0, [0])._map_const_idxs_to_subl_idxs([4]) == [[0, 1]]
-        >>> assert ExcessCEF([1, 2, 3], 0, [0])._map_const_idxs_to_subl_idxs([3]) == [[0, 1, 2]]
-        >>> assert ExcessCEF([1, 2, 3, 4], 0, [0])._map_const_idxs_to_subl_idxs([1, 1, 2]) == [[0], [0], [0, 1]]
+        >>> assert ExcessRKM([1, 2, 3, 4], 0, [0])._map_const_idxs_to_subl_idxs([2, 3]) == [[0, 1], [0, 1]]
+        >>> assert ExcessRKM([1, 3, 4], 0, [0])._map_const_idxs_to_subl_idxs([2, 3]) == [[0], [0, 1]]
+        >>> assert ExcessRKM([1, 2], 0, [0])._map_const_idxs_to_subl_idxs([4]) == [[0, 1]]
+        >>> assert ExcessRKM([1, 2, 3], 0, [0])._map_const_idxs_to_subl_idxs([3]) == [[0, 1, 2]]
+        >>> assert ExcessRKM([1, 2, 3, 4], 0, [0])._map_const_idxs_to_subl_idxs([1, 1, 2]) == [[0], [0], [0, 1]]
         """
         cum_num_subl_species = np.cumsum(num_subl_species)
         # initialize an empty sublattice model
@@ -260,7 +260,7 @@ class ExcessBase:
         Examples
         --------
         >>> phase_constituents = [['A'], ['A', 'B'], ['A', 'B', 'C']]
-        >>> ex = ExcessCEF([1, 2, 4, 6], 0, [0])
+        >>> ex = ExcessBase([1, 2, 4, 6], 0, [0])
         >>> ix_const_arr = ex.constituent_array(phase_constituents)
         >>> assert ix_const_arr == [['A'], ['A'], ['A', 'C']]
         """
@@ -273,7 +273,7 @@ class ExcessBase:
 
 
 @dataclass
-class ExcessCEF(ExcessBase):
+class ExcessRKM(ExcessBase):
     parameter_order: int
     coefficients: [float]
 
@@ -302,7 +302,7 @@ class ExcessCEF(ExcessBase):
 
 
 @dataclass
-class ExcessCEFMagnetic(ExcessBase):
+class ExcessRKMMagnetic(ExcessBase):
     parameter_order: int
     curie_temperature: float
     magnetic_moment: float
@@ -311,7 +311,7 @@ class ExcessCEFMagnetic(ExcessBase):
         """
         Requires all Species in dbf.species to be defined.
         """
-        # See the comment about sorting in ExcessCEF
+        # See the comment about sorting in ExcessRKM
         const_array = self.constituent_array(phase_constituents)
         dbf.add_parameter('TC', phase_name, const_array, self.parameter_order, self.curie_temperature, force_insert=False)
         dbf.add_parameter('BMAG', phase_name, const_array, self.parameter_order, self.magnetic_moment, force_insert=False)
@@ -369,7 +369,7 @@ class Phase_CEF(PhaseBase):
     subl_ratios: [float]
     constituent_array: [[str]]
     endmember_constituent_idxs: [[int]]
-    excess_parameters: [ExcessCEF]
+    excess_parameters: [ExcessBase]
     magnetic_afm_factor: float
     magnetic_structure_factor: float
 
@@ -439,14 +439,15 @@ class Phase_CEF(PhaseBase):
             for endmember in self.endmembers:
                 endmember.insert(dbf, self.phase_name, endmember.constituent_array(), gibbs_coefficient_idxs)
         else:
-            # we know the constituent array from the indices
+            # we know the constituent array from the indices and we don't have
+            # to guess
             for endmember, const_idxs in zip(self.endmembers, self.endmember_constituent_idxs):
                 em_const_array = [self.constituent_array[i][sp_idx - 1] for i, sp_idx in enumerate(const_idxs)]
                 endmember.insert(dbf, self.phase_name, em_const_array, gibbs_coefficient_idxs)
 
         # Now for excess parameters
         # TODO: We add them last since they depend on the phase's constituent
-        # array. As discussed in ExcessCEF.insert, we use the built constituent
+        # array. As discussed in ExcessRKM.insert, we use the built constituent
         # order above, but some models (e.g. SUBL) define the phase models
         # internally and this is thrown away by the parser currently.
         for excess_param in self.excess_parameters:
@@ -863,7 +864,7 @@ def parse_excess_magnetic_parameters(toks):
         for parameter_order in range(num_terms):
             curie_temperature = toks.parse(float)
             magnetic_moment = toks.parse(float)
-            excess_terms.append(ExcessCEFMagnetic(interacting_species_idxs, parameter_order, curie_temperature, magnetic_moment))
+            excess_terms.append(ExcessRKMMagnetic(interacting_species_idxs, parameter_order, curie_temperature, magnetic_moment))
     return excess_terms
 
 
@@ -876,7 +877,7 @@ def parse_excess_parameters(toks, num_excess_coeffs):
         interacting_species_idxs = toks.parseN(num_interacting_species, int)
         num_terms = toks.parse(int)
         for parameter_order in range(num_terms):
-            excess_terms.append(ExcessCEF(interacting_species_idxs, parameter_order, toks.parseN(num_excess_coeffs, float)))
+            excess_terms.append(ExcessRKM(interacting_species_idxs, parameter_order, toks.parseN(num_excess_coeffs, float)))
     return excess_terms
 
 
@@ -897,7 +898,7 @@ def parse_excess_parameters_pitz(toks, num_excess_coeffs):
             raise ValueError(f"Invalid number of interacting species for Pitzer model, got {num_interacting_species} (expected 2 or 3).")
         # TODO: not sure exactly if this value is parameter order, but it seems to be something like that
         parameter_order = None
-        excess_terms.append(ExcessCEF(interacting_species_idxs, parameter_order, toks.parseN(num_excess_coeffs, float)))
+        excess_terms.append(ExcessRKM(interacting_species_idxs, parameter_order, toks.parseN(num_excess_coeffs, float)))
     return excess_terms
 
 
