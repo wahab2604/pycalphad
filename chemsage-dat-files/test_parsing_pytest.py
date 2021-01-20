@@ -632,9 +632,9 @@ full_parses = [
     ("W-Au-Ar-Ne-O_04.dat", ''),
     ("FeCuCbase.dat", ''),
     ("FeTiVO.dat", ''),
-    pytest.param("Kaye_NobleMetals.dat", '', marks=pytest.mark.xfail),  # Uses QKTO model
+    ("Kaye_NobleMetals.dat", ''),  # Uses QKTO model
     ("ZIRC-noSUBI.dat", ''),
-    pytest.param("test14.dat", '', marks=pytest.mark.xfail),  # Uses QKTO model
+    ("test14.dat", ''),  # Uses QKTO model
 
     # Data files from publications
     ("CuZnFeCl-Viitala (1).dat", ''),

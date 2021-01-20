@@ -322,6 +322,54 @@ class ExcessQKTO(ExcessBase):
     interacing_species_type: [int]
     coefficients: [float]
 
+    def expr(self, indices):
+        """Return an expression for the energy in this temperature interval"""
+        energy = S.Zero
+        # Add fixed energy terms
+        energy += sum([C*EXCESS_TERMS[i] for C, i in zip(self.coefficients, indices)])
+        return energy
+
+    def _odd_species_out(self, phase_constituents):
+        # this assumes that the same species is the same type regardless of
+        # sublattice. See also the comment in ExcessQKTO.insert, which
+        # requires that the species of the different type is identified by
+        # species (i.e. no sublattice information).
+
+        # flatten phase constituents so they map to the linear indices
+        linear_constituents = list(itertools.chain(*phase_constituents))
+        species_groups = {}
+        for linear_idx, group_id in zip(self.interacting_species_idxs, self.interacing_species_type):
+            constit = linear_constituents[linear_idx - 1]  # linear_idx is one-indexed
+            species_groups[group_id] = species_groups.get(group_id, set()) | {constit}
+        assert len(species_groups) <= 2, f"A maximum of two species group types are supported, got group ids: {list(species_groups.keys())} with {species_groups}."
+        if len(species_groups.keys()) == 1:
+            return None
+        # find the group that contains the "odd one out" species
+        odd_species = [tuple(group)[0] for group in species_groups.values() if len(group) == 1][0]
+        odd_species_group_membership_ids = [group_id for group_id, group in species_groups.items() if odd_species in group]
+        assert len(odd_species_group_membership_ids) == 1, f"The odd species out ({odd_species}) can only belong to one element group, but it is found in element groups: {odd_species_group_membership_ids}."
+        return odd_species
+
+    def insert(self, dbf: Database, phase_name: str, phase_constituents: [str], excess_coefficient_idxs: [int]):
+        # we need to store the element types for each parameter, since the same
+        # constituents can have different types per parameter
+        # one option might be to use a diffusing species to indicate the odd
+        # species out, if it exists, however for multicomponent interactions,
+        # (e.g. with just 4 elements) we can have two elements of each type
+        # and then the diffusing species assumption breaks. So we would need to
+        # extend dbf._parameters to include some metadata, since the element
+        # types need to stay with the parameter. For now, we just assert that
+        # there are no interactions of this type and we just have one different
+        # species
+        odd_species = self._odd_species_out(phase_constituents)
+        const_array = self.constituent_array(phase_constituents)
+        # TODO: can higher order parameters be specified? Is this something I'm
+        # missing in the DAT file somewhere?
+        param_order = 0
+        dbf.add_parameter('L', phase_name, const_array, param_order,
+                          self.expr(excess_coefficient_idxs),
+                          diffusing_species=odd_species, force_insert=False)
+
 
 @dataclass
 class PhaseBase:
@@ -374,19 +422,23 @@ class Phase_CEF(PhaseBase):
     magnetic_structure_factor: float
 
     def insert(self, dbf: Database, pure_elements: [str], gibbs_coefficient_idxs: [int], excess_coefficient_idxs: [int]):
+        model_hints = {}
         if self.magnetic_afm_factor is not None and self.magnetic_structure_factor is not None:
-            # This is a magnetic model. I assumed IHJ model because I cannot
-            # find any details for which model is used in the ChemSage docs.
-            model_hints = {
-                # The TDB syntax would define the AFM factor for FCC as -3
-                # while ChemSage defines +0.333. This is likely because the
-                # model divides by the AFM factor (-1/3). We convert the AFM
-                # factor to the version used in the TDB/Model.
-                'ihj_magnetic_afm_factor': -1/self.magnetic_afm_factor,
-                'ihj_magnetic_structure_factor': self.magnetic_structure_factor,
-            }
-        else:
-            model_hints = {}
+            # This follows the Redlich-Kister Muggianu IHJ model. The ChemSage
+            # docs don't incidate that it's an IHJ model, but Eriksson and Hack,
+            # Met. Trans. B 21B (1990) 1013 says that it follows IHJ.
+            model_hints['ihj_magnetic_structure_factor'] = self.magnetic_structure_factor
+            # The TDB syntax would define the AFM factor for FCC as -3
+            # while ChemSage defines +0.333. This is likely because the
+            # model divides by the AFM factor (-1/3). We convert the AFM
+            # factor to the version used in the TDB/Model.
+            model_hints['ihj_magnetic_afm_factor'] = -1/self.magnetic_afm_factor
+
+        if all(isinstance(xs, (ExcessQKTO, ExcessRKMMagnetic)) for xs in self.excess_parameters):
+            # We have only QKTO excess models, add model hint.
+            model_hints['excess_model'] = ('KOHLER_TOOP', None, None, None)
+        elif any(isinstance(xs, (ExcessQKTO)) for xs in self.excess_parameters) and any(isinstance(xs, (ExcessRKM)) for xs in self.excess_parameters):
+            raise ValueError("ExcessQKTO and ExcessRKM parameters found, but they cannot co-exist.")
 
         dbf.add_phase(self.phase_name, model_hints=model_hints, sublattices=self.subl_ratios)
 
