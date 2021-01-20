@@ -637,6 +637,9 @@ class Phase_SUBQ(PhaseBase):
 
         # Second: add the phase and phase constituents
         # TODO: model hints to identify this phase as MQMQA
+        # TODO: can model hints give us the map we need from the mangled
+        #       species names to the real species (and give us a way to compute
+        #       mass)?
         dbf.add_phase(self.phase_name, model_hints={}, sublattices=[1.0])
         dbf.add_phase_constituents(self.phase_name, [[sp.name for sp in quad_species]])
 
