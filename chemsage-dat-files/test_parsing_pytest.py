@@ -2,6 +2,7 @@
 import pytest
 
 import numpy as np
+from tinydb import where
 from pycalphad.io.cs_dat import *
 
 header_data = [
@@ -644,3 +645,24 @@ full_parses = [
 @pytest.mark.parametrize("filename, _", full_parses)
 def test_reading_chemsage_databases(filename, _):
     dbf = Database(filename)
+
+
+def test_database_CuZnFeCl_Viitala():
+    dbf = Database('CuZnFeCl-Viitala (1).dat')
+
+
+def test_database_Pb_Sn_XX():
+    dbf = Database('Pb-Sn.dat')
+    assert len(dbf._parameters.all()) == 10
+    # BCT_A5 excess
+    params = dbf._parameters.search((where('phase_name') == 'BCT_A5') & (where('parameter_type') == 'L'))
+    assert len(params) == 1
+    param = params[0]
+    assert len(param['constituent_array'][0]) == 2
+    assert param['constituent_array'] == ((v.Species('PB'), v.Species('SN')),)
+    # BCT_A5 endmembers
+    params = dbf._parameters.search((where('phase_name') == 'BCT_A5') & (where('parameter_type') == 'G'))
+    assert len(params) == 2
+    param = params[0]
+    assert len(param['constituent_array'][0]) == 1
+    assert param['constituent_array'] == ((v.Species('PB'),),)
