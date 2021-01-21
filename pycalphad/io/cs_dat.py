@@ -442,7 +442,6 @@ class Phase_CEF(PhaseBase):
 
         dbf.add_phase(self.phase_name, model_hints=model_hints, sublattices=self.subl_ratios)
 
-        print(self.subl_ratios)
         # This does two things:
         # 1. set the self.constituent_array
         # 2. add species to the database
@@ -579,7 +578,7 @@ class Quadruplet:
         """Add a Z_i_AB:XY parameter for each species defined in the quadruplet"""
         linear_species = [''] + As + Xs  # the leading '' element pads for one-indexed quadruplet_idxs
         A, B, X, Y = tuple(linear_species[idx] for idx in self.quadruplet_idxs)
-        constituent_array = [get_species(A, B, X, Y).name]
+        constituent_array = [[get_species(A, B, X, Y).name]]
         added_species = set()
         for i, Z in zip((A, B, X, Y), self.quadruplet_coordinations):
             # diffusing species, i, will mark Z_i_AB:XY
@@ -616,7 +615,7 @@ class ExcessQuadruplet:
         A, B, X, Y = tuple(linear_species[idx] for idx in self.mixing_const)
         AAs = np.unique([(A, A), (B, B)], axis=0).tolist()
         XXs = np.unique([(X, X), (Y, Y)], axis=0).tolist()
-        return [get_species(A, B, X, Y).name for (A, B), (X, Y) in itertools.product(AAs, XXs)]
+        return [[get_species(A, B, X, Y).name for (A, B), (X, Y) in itertools.product(AAs, XXs)]]
 
     def insert(self, dbf: Database, phase_name: str, As: [str], Xs: [str]):
         """
