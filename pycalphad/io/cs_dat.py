@@ -683,11 +683,12 @@ class Phase_SUBQ(PhaseBase):
         As = [rename_element_charge(el, chg) for el, chg in zip(self.subl_1_const, self.subl_1_charges)]
         Xs = [rename_element_charge(el, chg) for el, chg in zip(self.subl_2_const, self.subl_2_charges)]
 
+        # Add the "pure" (renamed) species to the database so the phase constituents can be added
+        dbf.species.update(map(v.Species, As))
+        dbf.species.update(map(v.Species, Xs))
         # Add the quadruplet species to the database, these are our constituents
         quad_species = quasichemical_quadruplet_species(As, Xs)
         dbf.species.update(quad_species)
-        dbf.species.update(map(v.Species, As))
-        dbf.species.update(map(v.Species, Xs))
         # We also need to add the pair species to the list of Database species
         # in order to make the endmember pair parameters insert correctly.
         pair_species = quasichemical_pair_species(As, Xs)
