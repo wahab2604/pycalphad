@@ -509,10 +509,14 @@ class Phase_CEF(PhaseBase):
 def get_species(*constituents: [str]) -> v.Species:
     """Return a Species for a pair or quadruplet given by constituents
 
+    Canonicalizes the Species by sorting among the A and X sublattices.
+
     Examples
     --------
         get_species('A_1.0', 'B_1.0')
     """
+    if len(constituents) == 4:
+        constituents = sorted(constituents[0:2]) + sorted(constituents[2:4])
     name = ''.join(constituents)
     constituent_dict = {}
     # using get() will increment c instead of overriding if c is already defined
