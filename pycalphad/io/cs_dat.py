@@ -704,18 +704,17 @@ class Phase_SUBQ(PhaseBase):
         # Third: add the endmember (pair) Gibbs energies
         # We assume that every pair that can exist is defined, i.e.
         assert len(self.endmembers) == len(pair_species)
-        # TODO:
+
         # Different charge states of endmember pairs are not well defined in the
         # DAT format. It seems to be implicit in the stoichiometry, e.g. CuCl
         # and CuCl2 refer to the CU_1.0 and CU_2.0 constituents, respectively.
         # Maybe the "correct" way would be to give the candidate charges and
         # determine which charge states are required to achieve a charge neutral
-        # pair. Instead we will go with a more straightforward method where we
-        # assume the pairs are in order of itertools.product(As, Xs). At least
-        # for the databases I have, that seems to be true. This also solves the
-        # problem of implicit vacancies in the endmember names, e.g. CVa is C.
-        for pair_sp, endmember in zip(pair_species, self.endmembers):
-            endmember.insert(dbf, self.phase_name, [pair_sp.name], gibbs_coefficient_idxs)
+        # pair.
+        # Endmember pairs came in order of the specified subl_const_idx_pairs labels.
+        for (i, j), endmember in zip(self.subl_const_idx_pairs, self.endmembers):
+            pair_sp = get_species(As[i-1], Xs[j-1])
+            endmember.insert(dbf, self.phase_name, [[pair_sp.name]], gibbs_coefficient_idxs)
 
         # Fourth: add parameters for coordinations
         # TODO: for the quadruplets that are not specified here, the
