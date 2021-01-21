@@ -705,12 +705,6 @@ class Phase_SUBQ(PhaseBase):
         # We assume that every pair that can exist is defined, i.e.
         assert len(self.endmembers) == len(pair_species)
 
-        # Different charge states of endmember pairs are not well defined in the
-        # DAT format. It seems to be implicit in the stoichiometry, e.g. CuCl
-        # and CuCl2 refer to the CU_1.0 and CU_2.0 constituents, respectively.
-        # Maybe the "correct" way would be to give the candidate charges and
-        # determine which charge states are required to achieve a charge neutral
-        # pair.
         # Endmember pairs came in order of the specified subl_const_idx_pairs labels.
         for (i, j), endmember in zip(self.subl_const_idx_pairs, self.endmembers):
             pair_sp = get_species(As[i-1], Xs[j-1])
