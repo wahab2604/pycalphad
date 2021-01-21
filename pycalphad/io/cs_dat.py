@@ -554,9 +554,9 @@ def quasichemical_quadruplet_species(As, Xs):
 def rename_element_charge(element, charge):
     """We use the _ to separate so we have something to split on."""
     if charge >= 0:
-        return f'{element}_{charge}'
+        return f'{element}/+{charge}'
     else:
-        return f'{element}_{abs(charge)}'
+        return f'{element}/-{abs(charge)}'
 
 
 @dataclass
