@@ -59,12 +59,20 @@ class Header:
     excess_coefficient_idxs: [int]
 
 
+import warnings
+
 @dataclass
 class AdditionalCoefficientPair:
     coefficient: float
     exponent: float
 
     def expr(self):
+        if self.exponent == 99:
+            # this is a special case and means log(v.T)
+            # See ChemApp documentation, section 11.1 cosi.dat, Line 5
+            return self.coefficient*log(v.T)
+        if abs(self.exponent) > 9:
+            warnings.warn(f"Additional coefficient pair has an exponent of {self.exponent}, which should be between -9 and +9.")
         return self.coefficient * v.T**(self.exponent)
 
 
