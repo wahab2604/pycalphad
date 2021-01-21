@@ -682,9 +682,12 @@ class Phase_SUBQ(PhaseBase):
         # Here we rename the species names according to their charges, to avoid creating duplicate pairs/quadruplets
         As = [rename_element_charge(el, chg) for el, chg in zip(self.subl_1_const, self.subl_1_charges)]
         Xs = [rename_element_charge(el, chg) for el, chg in zip(self.subl_2_const, self.subl_2_charges)]
+
         # Add the quadruplet species to the database, these are our constituents
         quad_species = quasichemical_quadruplet_species(As, Xs)
         dbf.species.update(quad_species)
+        dbf.species.update(map(v.Species, As))
+        dbf.species.update(map(v.Species, Xs))
         # We also need to add the pair species to the list of Database species
         # in order to make the endmember pair parameters insert correctly.
         pair_species = quasichemical_pair_species(As, Xs)
@@ -696,7 +699,7 @@ class Phase_SUBQ(PhaseBase):
         #       species names to the real species (and give us a way to compute
         #       mass)?
         dbf.add_phase(self.phase_name, model_hints={}, sublattices=[1.0])
-        dbf.add_phase_constituents(self.phase_name, [[sp.name for sp in quad_species]])
+        dbf.add_phase_constituents(self.phase_name, [As, Xs])
 
         # Third: add the endmember (pair) Gibbs energies
         # We assume that every pair that can exist is defined, i.e.
