@@ -505,7 +505,7 @@ class Phase_CEF(PhaseBase):
             excess_param.insert(dbf, self.phase_name, self.constituent_array, excess_coefficient_idxs)
 
 
-def get_species(*constituents: [str]) -> v.Species:
+def get_species(*constituents: [(str, v.Species)]) -> v.Species:
     """Return a Species for a pair or quadruplet given by constituents
 
     Canonicalizes the Species by sorting among the A and X sublattices.
@@ -514,6 +514,9 @@ def get_species(*constituents: [str]) -> v.Species:
     --------
         get_species('A_1.0', 'B_1.0')
     """
+    if all(isinstance(c, v.Species) for c in constituents):
+        # if everything is a species, get the string names as constituents
+        constituents = [c.name for c in constituents]
     if len(constituents) == 4:
         constituents = sorted(constituents[0:2]) + sorted(constituents[2:4])
     name = ''.join(constituents)
