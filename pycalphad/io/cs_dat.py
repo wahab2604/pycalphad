@@ -603,7 +603,7 @@ class Quadruplet:
 @dataclass
 class ExcessQuadruplet:
     mixing_type: int
-    mixing_code: str
+    mixing_code: str  # G, Q, etc.
     mixing_const: [int]  # exactly four
     mixing_exponents: [int]  # exactly four
     junk: [float]  # exactly twelve
