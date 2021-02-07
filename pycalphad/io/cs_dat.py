@@ -18,7 +18,7 @@ import itertools
 from dataclasses import dataclass
 from pycalphad import Database
 from collections import deque
-from sympy import S, log, Piecewise, And
+from sympy import S, log, Piecewise, And, integrate
 from pycalphad import variables as v
 
 
@@ -26,6 +26,7 @@ from pycalphad import variables as v
 # We use a leading zero term because the data file's indices are 1-indexed and
 # this prevents us from needing to shift the indicies.
 GIBBS_TERMS = (S.Zero, S.One, v.T, v.T*log(v.T), v.T**2, v.T**3, 1/v.T)
+CP_TERMS = (S.Zero, S.One, v.T, v.T**2, v.T**(-2))
 # TODO: HEAT_CAPACITY_TERMS:
 # We need to transform these into Gibbs energies, i.e.
 # G = H - TS = (A + integral(CpdT)) + T(B + integral(Cp/T dT))
@@ -128,7 +129,24 @@ class IntervalCP(IntervalBase):
     PTVm_terms: [PTVmTerms]
 
     def expr(self, indices, T_min=298.15):
-        raise NotImplementedError("Gibbs energy equations defined with heat capacity terms are not yet supported.")
+        """Return an expression for the energy in this temperature interval"""
+        if self.H_trans != 0:
+            raise NotImplementedError("H_trans not supported")
+        Cp = S.Zero
+        # Construct the heat capacity
+        Cp += sum([C*CP_TERMS[i] for C, i in zip(self.CP_coefficients, indices)])
+        # Additional terms
+        Cp += sum([addit_term.expr() for addit_term in self.additional_coeff_pairs])
+        # P-T molar volume terms, not supported
+        if len(self.PTVm_terms) > 0:
+            raise NotImplementedError("P-T molar volume terms are not supported")
+
+        # Construct the H(T) and S(T) functions
+        # \[ H(T) = H298 + \int_{298.15}^{T} Cp dT \]
+        H_ = self.H298 + integrate(Cp, (v.T, 298.15, v.T))
+        # \[ S(T) = S298 + \int_{298.15}^{T} Cp/T dT \]
+        S_ = self.S298 + integrate(Cp/v.T, (v.T, 298.15, v.T))
+        return H_ - v.T*S_
 
 
 @dataclass
