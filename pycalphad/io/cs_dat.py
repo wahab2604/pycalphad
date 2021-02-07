@@ -418,6 +418,8 @@ class Phase_Stoichiometric(PhaseBase):
             dbf.species.add(sp)
         constituents = [[sp_name]]
         dbf.add_phase_constituents(self.phase_name, constituents)
+        assert len(self.endmembers) == 1
+        self.endmembers[0].insert(dbf, self.phase_name, self.endmembers[0].constituent_array(), gibbs_coefficient_idxs)
 
 
 @dataclass
