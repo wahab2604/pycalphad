@@ -422,22 +422,19 @@ class Phase_Stoichiometric(PhaseBase):
         # TODO: magnetic model hints? Are these why there are four numbers for
         # magnetic endmembers instead of two for solution phases? Add a raise in
         # the parser instead of parsing these into nothing to find the examples.
-        dbf.add_phase(self.phase_name, {}, [1.0])
+
         assert len(self.endmembers) == 1  # stoichiometric phase
-        # define phase constituents as a species on a single sublattice, which is also the name of the phase
-        # first we need to add this species to the Database
-        sp_name = self.phase_name
-        sp = v.Species(sp_name, constituents=self.endmembers[0].constituents(pure_elements))
-        # sp in dbf.species compares hashes, which only compare names. We need
-        # to compare equality to see if they have the same constituents
-        if sp in dbf.species and not any(sp == dbf_sp for dbf_sp in dbf.species):
-            raise ValueError(f"Species {sp} already exists in the Database. Phase {self.phase_name} cannot be added.")
-        else:
-            dbf.species.add(sp)
-        constituents = [[sp_name]]
-        dbf.add_phase_constituents(self.phase_name, constituents)
-        assert len(self.endmembers) == 1
-        self.endmembers[0].insert(dbf, self.phase_name, self.endmembers[0].constituent_array(), gibbs_coefficient_idxs)
+
+        # For stoichiometric endmembers, the endmember "constituent array" is
+        # just the phase name. We can just define the real constituent array in
+        # terms of pure elements, where each element gets it's own sublattice.
+        constituent_dict = self.endmembers[0].constituents(pure_elements)
+        constituent_array = [[el] for el in sorted(constituent_dict.keys())]
+        subl_stoich_ratios = [constituent_dict[el] for el in sorted(constituent_dict.keys())]
+
+        dbf.add_phase(self.phase_name, {}, subl_stoich_ratios)
+        dbf.add_phase_constituents(self.phase_name, constituent_array)
+        self.endmembers[0].insert(dbf, self.phase_name, constituent_array, gibbs_coefficient_idxs)
 
 
 @dataclass
