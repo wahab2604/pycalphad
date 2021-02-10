@@ -680,6 +680,13 @@ class ExcessQuadruplet:
                           parameter_order, self.expr(), force_insert=False)
 
 
+def _species(el_chg):
+    el, chg = el_chg
+    name = rename_element_charge(el, chg)
+    constituents = dict(parse_chemical_formula(el)[0])
+    return v.Species(name, constituents=constituents, charge=chg)
+
+
 @dataclass
 class Phase_SUBQ(PhaseBase):
     num_pairs: int
@@ -726,19 +733,15 @@ class Phase_SUBQ(PhaseBase):
 
         # First: get the pair and quadruplet species added to the database:
         # Here we rename the species names according to their charges, to avoid creating duplicate pairs/quadruplets
-        As = [rename_element_charge(el, chg) for el, chg in zip(self.subl_1_const, self.subl_1_charges)]
-        Xs = [rename_element_charge(el, chg) for el, chg in zip(self.subl_2_const, self.subl_2_charges)]
+        cation_el_chg_pairs = list(zip(self.subl_1_const, self.subl_1_charges))
+        # anion charges are given as positive values, but should be negative
+        anion_el_chg_pairs = list(zip(self.subl_2_const, [-1*c for c in self.subl_2_charges]))
+        cations = [rename_element_charge(el, chg) for el, chg in cation_el_chg_pairs]
+        anions = [rename_element_charge(el, chg) for el, chg in anion_el_chg_pairs]
 
         # Add the "pure" (renamed) species to the database so the phase constituents can be added
-        dbf.species.update(map(v.Species, As))
-        dbf.species.update(map(v.Species, Xs))
-        # Add the quadruplet species to the database, these are our constituents
-        quad_species = quasichemical_quadruplet_species(As, Xs)
-        dbf.species.update(quad_species)
-        # We also need to add the pair species to the list of Database species
-        # in order to make the endmember pair parameters insert correctly.
-        pair_species = quasichemical_pair_species(As, Xs)
-        dbf.species.update(pair_species)
+        dbf.species.update(map(_species, cation_el_chg_pairs))
+        dbf.species.update(map(_species, anion_el_chg_pairs))
 
         # Second: add the phase and phase constituents
         # TODO: model hints to identify this phase as MQMQA
@@ -746,15 +749,17 @@ class Phase_SUBQ(PhaseBase):
         #       species names to the real species (and give us a way to compute
         #       mass)?
         dbf.add_phase(self.phase_name, model_hints={}, sublattices=[1.0])
-        dbf.add_phase_constituents(self.phase_name, [As, Xs])
+        dbf.add_phase_constituents(self.phase_name, [cations, anions])
 
         # Third: add the endmember (pair) Gibbs energies
         # We assume that every pair that can exist is defined, i.e.
-        assert len(self.endmembers) == len(pair_species)
+
+        num_pairs = len(list(itertools.product(cations, anions)))
+        assert len(self.endmembers) == num_pairs
 
         # Endmember pairs came in order of the specified subl_const_idx_pairs labels.
         for (i, j), endmember in zip(self.subl_const_idx_pairs, self.endmembers):
-            pair_sp = get_species(As[i-1], Xs[j-1])
+            pair_sp = get_species(cations[i-1], anions[j-1])
             endmember.insert(dbf, self.phase_name, [[pair_sp.name]], gibbs_coefficient_idxs)
 
         # Fourth: add parameters for coordinations
@@ -763,11 +768,11 @@ class Phase_SUBQ(PhaseBase):
         # coordination numbers not specified here or can/should it wait until
         # model?
         for quadruplet in self.quadruplets:
-            quadruplet.insert(dbf, self.phase_name, As, Xs)
+            quadruplet.insert(dbf, self.phase_name, cations, anions)
 
         # Fifth: add excess parameters
         for excess_param in self.excess_parameters:
-            excess_param.insert(dbf, self.phase_name, As, Xs)
+            excess_param.insert(dbf, self.phase_name, cations, anions)
 
 
 # TODO: not yet supported
