@@ -3,36 +3,14 @@ Test variables module.
 """
 
 import numpy as np
-import pytest
 from pycalphad import Database
 from pycalphad import variables as v
 from .datasets import CUO_TDB
 
 
-SPECIES_EXAMPLES = [
-    ("CL[-]", "CL[-]", {"CL": 1.0}, -1),
-    ("CU[+]", "CU[+]", {"CU": 1.0}, 1),
-    ("FE[3+]", "FE[3+]", {"FE": 1.0}, 3),
-    ("FE1[2+]", "FE1[2+]", {"FE": 1.0}, 2),
-    ("FE2[2+]", "FE2[2+]", {"FE": 2.0}, 2),
-    ("ZN1CL3[1-]", "ZN1CL3[1-]", {"ZN": 1.0, "CL": 3.0}, -1),
-    ("FE1O1.5", "FE1O1.5", {"FE": 1.0, "O": 1.5}, 0)
-]
-
-
 def test_species_parse_unicode_strings():
     """Species should properly parse unicode strings."""
     s = v.Species(u"MG")
-
-
-@pytest.mark.parametrize("species_str, expected_name, expected_constituents, expected_charge", SPECIES_EXAMPLES)
-def test_species_parsing(species_str, expected_name, expected_constituents, expected_charge):
-    sp = v.Species(species_str)
-    assert sp.name == expected_name
-    assert set(sp.constituents.keys()) == set(expected_constituents.keys())
-    for el in sp.constituents.keys():
-        assert np.isclose(sp.constituents[el], expected_constituents[el])
-    assert np.isclose(sp.charge, expected_charge)
 
 
 def test_mole_and_mass_fraction_conversions():
