@@ -568,32 +568,6 @@ def get_species(*constituents: [(str, v.Species)]) -> v.Species:
     return v.Species(name, constituents=constituent_dict)
 
 
-def quasichemical_pair_species(As, Xs):
-    """
-    Return all possible Species objects corresponding to the A:X pairs.
-
-    TODO: must be careful with As having repeat names. If the
-    same element is repeated in a sublattice, then it will generate the
-    correct number species, but some will be equivalent, i.e.
-    len(species) != len(set(species))
-    """
-    return [get_species(A, X) for A, X in itertools.product(As, Xs)]
-
-
-def quasichemical_quadruplet_species(As, Xs):
-    """
-    Return all possible Species objects corresponding to AB:XY quadruplets.
-
-    TODO: must be careful with As and Xs having repeat names. If the
-    same element is repeated in a sublattice, then it will generate the
-    correct number species, but some will be equivalent, i.e.
-    len(species) != len(set(species))
-    """
-    ABs = itertools.combinations_with_replacement(As, 2)
-    XYs = itertools.combinations_with_replacement(Xs, 2)
-    return [get_species(A, B, X, Y) for (A, B), (X, Y) in itertools.product(ABs, XYs)]
-
-
 def rename_element_charge(element, charge):
     """We use the _ to separate so we have something to split on."""
     if charge == 0:
@@ -624,15 +598,15 @@ class Quadruplet:
         """Add a Z_i_AB:XY parameter for each species defined in the quadruplet"""
         linear_species = [''] + As + Xs  # the leading '' element pads for one-indexed quadruplet_idxs
         A, B, X, Y = tuple(linear_species[idx] for idx in self.quadruplet_idxs)
-        constituent_array = [[get_species(A, B, X, Y).name]]
-        added_species = set()
+        # TODO: do we need to sort these?
+        constituent_array = [[A, B], [X, Y]]
+        added_diffusing_species = set()
         for i, Z in zip((A, B, X, Y), self.quadruplet_coordinations):
-            # diffusing species, i, will mark Z_i_AB:XY
-            sp_i = get_species(i)
+            # diffusing species, i, will make Z^i_{AB/XY}
             # avoid adding duplicate Z parameters, each should be unique
-            if sp_i not in added_species:
-                dbf.add_parameter('Z', phase_name, constituent_array, 0, Z, diffusing_species=sp_i, force_insert=False)
-                added_species.add(sp_i)
+            if i not in added_diffusing_species:
+                dbf.add_parameter('Z', phase_name, constituent_array, 0, Z, diffusing_species=i, force_insert=False)
+                added_diffusing_species.add(i)
 
 
 @dataclass
@@ -650,24 +624,8 @@ class ExcessQuadruplet:
     def expr(self):
         return 0.0
 
-    def constituent_array(self, As: [str], Xs: [str]):
-        """Return the pure quadruplets that make up this mixed quadruplet
-
-        The As and Xs are candidates over the whole phase.
-
-        The internal As and Xs are the actual ones for endmembers
-        """
-        linear_species = [''] + As + Xs  # the leading '' element pads for one-indexed quadruplet_idxs
-        A, B, X, Y = tuple(linear_species[idx] for idx in self.mixing_const)
-        AAs = np.unique([(A, A), (B, B)], axis=0).tolist()
-        XXs = np.unique([(X, X), (Y, Y)], axis=0).tolist()
-        return [[get_species(A, B, X, Y).name for (A, B), (X, Y) in itertools.product(AAs, XXs)]]
-
     def insert(self, dbf: Database, phase_name: str, As: [str], Xs: [str]):
         """
-        AB:XX means mixing between AA:XX - BB:XX, so we can
-        enter the constituent array as normal with mixing between them
-
         TODO: This is probably not implemented correctly because we ignore
         mixing code Q vs. G.
 
@@ -675,8 +633,12 @@ class ExcessQuadruplet:
         G :: X_AB:XY (i.e. y_constituent)
         Q :: Y_A
         """
+        return  # TODO: implement this function correctly
+        linear_species = [''] + As + Xs  # the leading '' element pads for one-indexed quadruplet_idxs
+        A, B, X, Y = tuple(linear_species[idx] for idx in self.quadruplet_idxs)
+        # TODO: don't store empty parameters. Store exponents.
         parameter_order = 0
-        dbf.add_parameter('L', phase_name, self.constituent_array(As, Xs),
+        dbf.add_parameter('L', phase_name, [[A, B], [X, Y]],
                           parameter_order, self.expr(), force_insert=False)
 
 
@@ -734,7 +696,8 @@ class Phase_SUBQ(PhaseBase):
         # First: get the pair and quadruplet species added to the database:
         # Here we rename the species names according to their charges, to avoid creating duplicate pairs/quadruplets
         cation_el_chg_pairs = list(zip(self.subl_1_const, self.subl_1_charges))
-        # anion charges are given as positive values, but should be negative
+        # anion charges are given as positive values, but should be negative in
+        # order to make the species entered in the expected way (`CL-1`).
         anion_el_chg_pairs = list(zip(self.subl_2_const, [-1*c for c in self.subl_2_charges]))
         cations = [rename_element_charge(el, chg) for el, chg in cation_el_chg_pairs]
         anions = [rename_element_charge(el, chg) for el, chg in anion_el_chg_pairs]
@@ -759,8 +722,7 @@ class Phase_SUBQ(PhaseBase):
 
         # Endmember pairs came in order of the specified subl_const_idx_pairs labels.
         for (i, j), endmember in zip(self.subl_const_idx_pairs, self.endmembers):
-            pair_sp = get_species(cations[i-1], anions[j-1])
-            endmember.insert(dbf, self.phase_name, [[pair_sp.name]], gibbs_coefficient_idxs)
+            endmember.insert(dbf, self.phase_name, [[cations[i-1]], [anions[j-1]]], gibbs_coefficient_idxs)
 
         # Fourth: add parameters for coordinations
         # TODO: for the quadruplets that are not specified here, the
