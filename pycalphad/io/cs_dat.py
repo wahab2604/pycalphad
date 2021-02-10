@@ -13,6 +13,7 @@ Careful of a gotcha:  `obj.setParseAction` modifies the object in place but call
 
 """
 
+import re
 import numpy as np
 import itertools
 from dataclasses import dataclass
@@ -20,7 +21,7 @@ from pycalphad import Database
 from collections import deque
 from sympy import S, log, Piecewise, And, integrate
 from pycalphad import variables as v
-
+from pycalphad.io.grammar import parse_chemical_formula
 
 # From ChemApp Documentation, section 11.1 "The format of a ChemApp data-file"
 # We use a leading zero term because the data file's indices are 1-indexed and
@@ -33,6 +34,21 @@ CP_TERMS = (S.Zero, S.One, v.T, v.T**2, v.T**(-2))
 # Terms are
 # Cp = (S.Zero, S.One, v.T, v.T**2, v.T**(-2))
 EXCESS_TERMS = (S.Zero, S.One, v.T, v.T*log(v.T), v.T**2, v.T**3, 1/v.T, v.P, v.P**2)
+
+
+def _parse_species_postfix_charge(formula) -> v.Species:
+    name = formula
+    # handle postfix charge: FE[2+] CU[+] CL[-] O[2-]
+    match = re.search(r'\[([0-9]+)?([-+])\]', formula)
+    if match is not None:
+        # remove the charge from the formula
+        formula = formula[:match.start()]
+        charge = int(f'{match.groups()[1]}{match.groups()[0] or 1}')
+    else:
+        charge = 0
+    # assumes that the remaining formula is a pure element
+    constituents = dict(parse_chemical_formula(formula)[0])
+    return v.Species(name, constituents=constituents, charge=charge)
 
 
 class TokenParser(deque):
@@ -505,7 +521,7 @@ class Phase_CEF(PhaseBase):
             # add the species to the database
             for subl in self.constituent_array:
                 for const in subl:
-                    dbf.species.add(v.Species(const))  # TODO: masses
+                    dbf.species.add(_parse_species_postfix_charge(const))  # TODO: masses
         dbf.add_phase_constituents(self.phase_name, self.constituent_array)
 
         # Now that all the species are in the database, we are free to add the parameters
