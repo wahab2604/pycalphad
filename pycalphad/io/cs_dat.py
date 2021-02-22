@@ -534,7 +534,7 @@ class Phase_CEF(PhaseBase):
             # we know the constituent array from the indices and we don't have
             # to guess
             for endmember, const_idxs in zip(self.endmembers, self.endmember_constituent_idxs):
-                em_const_array = [[self.constituent_array[i][sp_idx - 1] for i, sp_idx in enumerate(const_idxs)]]
+                em_const_array = [[self.constituent_array[i][sp_idx - 1]] for i, sp_idx in enumerate(const_idxs)]
                 endmember.insert(dbf, self.phase_name, em_const_array, gibbs_coefficient_idxs)
 
         # Now for excess parameters
