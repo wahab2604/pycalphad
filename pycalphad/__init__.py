@@ -9,7 +9,7 @@ sympy.functions.elementary.piecewise.ExprCondPair.__new__ = staticmethod(pycalph
 
 from pycalphad.core.errors import *
 import pycalphad.variables as v
-from pycalphad.model import Model, ReferenceState
+from pycalphad.models import Model, ModelBase, ModelProtocol, ModelExtension, ReferenceState
 from pycalphad.io.database import Database
 
 # Trigger format extension hooks

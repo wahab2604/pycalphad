@@ -1,3 +1,5 @@
+from .base import ModelBase
+
 """
 The model module provides support for using a Database to perform
 calculations under specified conditions.
@@ -10,7 +12,6 @@ from pycalphad.core.errors import DofError
 from pycalphad.core.constants import MIN_SITE_FRACTION
 from pycalphad.core.utils import unpack_components, get_pure_elements, wrap_symbol
 from pycalphad.core.constraints import is_multiphase_constraint
-import numpy as np
 from collections import OrderedDict
 
 # Maximum number of levels deep we check for symbols that are functions of
@@ -18,52 +19,7 @@ from collections import OrderedDict
 _MAX_PARAM_NESTING = 32
 
 
-class ReferenceState():
-    """
-    Define the phase and any fixed state variables as a reference state for a component.
-
-    Parameters
-    ----------
-
-    Attributes
-    ----------
-    fixed_statevars : dict
-        Dictionary of {StateVariable: value} that will be fixed, e.g. {v.T: 298.15, v.P: 101325}
-    phase_name : str
-        Name of phase
-    species : Species
-        pycalphad Species variable
-
-    """
-    def __init__(self, species, reference_phase, fixed_statevars=None):
-        """
-        Parameters
-        ----------
-        species : str or Species
-            Species to define the reference state for. Only pure elements supported.
-        reference_phase : str
-            Name of phase
-        fixed_statevars : None, optional
-            Dictionary of {StateVariable: value} that will be fixed, e.g. {v.T: 298.15, v.P: 101325}
-            If None (the default), an empty dict will be created.
-
-        """
-        if isinstance(species, v.Species):
-            self.species = species
-        else:
-            self.species = v.Species(species)
-        self.phase_name = reference_phase
-        self.fixed_statevars = fixed_statevars if fixed_statevars is not None else {}
-
-    def __repr__(self):
-        if len(self.fixed_statevars.keys()) > 0:
-            s = "ReferenceState('{}', '{}', {})".format(self.species.name, self.phase_name, self.fixed_statevars)
-        else:
-            s = "ReferenceState('{}', '{}')".format(self.species.name, self.phase_name)
-        return s
-
-
-class Model(object):
+class ModelRedlichKisterMuggianu(ModelBase):
     """
     Models use an abstract representation of the function
     for calculation of values under specified conditions.
@@ -89,21 +45,11 @@ class Model(object):
     --------
     None yet.
 
-    Notes
-    -----
-    The two sublattice ionic liquid model has several special cases compared to
-    typical models within the compound energy formalism. A few key differences
-    arise. First, variable site ratios (modulated by vacancy site fractions)
-    are used to charge balance the phase. Second, endmembers for neutral
-    species and interactions among only neutral species should be specified
-    using only one sublattice (dropping the cation sublattice). For
-    understanding the special cases used throughout this class, users are
-    referred to:
-    Sundman, "Modification of the two-sublattice model for liquids",
-    Calphad 15(2) (1991) 109-119 https://doi.org/d3jppb
-
-
     """
+    @staticmethod
+    def dispatches_on(phase_obj: 'Phase') -> bool:
+        return True
+
     # We only use the contributions attribute in build_phase.
     # Users should not access it later since subclasses can override build_phase
     # and make self.models inconsistent with contributions.
@@ -125,28 +71,6 @@ class Model(object):
         for idx, sublattice in enumerate(phase.constituents):
             subl_comps = set(sublattice).intersection(active_species)
             self.components |= subl_comps
-            # Support for variable site ratios in ionic liquid model
-            if phase.model_hints.get('ionic_liquid_2SL', False):
-                if idx == 0:
-                    subl_idx = 1
-                elif idx == 1:
-                    subl_idx = 0
-                else:
-                    raise ValueError('Two-sublattice ionic liquid specified with more than two sublattices')
-                self.site_ratios[subl_idx] = Add(*[v.SiteFraction(self.phase_name, idx, spec) * abs(spec.charge) for spec in subl_comps])
-        if phase.model_hints.get('ionic_liquid_2SL', False):
-            # Special treatment of "neutral" vacancies in 2SL ionic liquid
-            # These are treated as having variable valence
-            for idx, sublattice in enumerate(phase.constituents):
-                subl_comps = set(sublattice).intersection(active_species)
-                if v.Species('VA') in subl_comps:
-                    if idx == 0:
-                        subl_idx = 1
-                    elif idx == 1:
-                        subl_idx = 0
-                    else:
-                        raise ValueError('Two-sublattice ionic liquid specified with more than two sublattices')
-                    self.site_ratios[subl_idx] += self.site_ratios[idx] * v.SiteFraction(self.phase_name, idx, v.Species('VA'))
         self.site_ratios = tuple(self.site_ratios)
 
         # Verify that this phase is still possible to build
@@ -199,8 +123,6 @@ class Model(object):
         for name, value in self.models.items():
             self.models[name] = self.symbol_replace(value, symbols)
 
-        self.site_fractions = sorted([x for x in self.variables if isinstance(x, v.SiteFraction)], key=str)
-        self.state_variables = sorted([x for x in self.variables if not isinstance(x, v.SiteFraction)], key=str)
 
     @staticmethod
     def symbol_replace(obj, symbols):
@@ -271,15 +193,6 @@ class Model(object):
                         for spec in active)
         return result / normalization
 
-    @property
-    def ast(self):
-        "Return the full abstract syntax tree of the model."
-        return Add(*list(self.models.values()))
-
-    @property
-    def variables(self):
-        "Return state variables in the model."
-        return sorted([x for x in self.ast.free_symbols if isinstance(x, v.StateVariable)], key=str)
 
     @property
     def degree_of_ordering(self):
@@ -313,7 +226,6 @@ class Model(object):
 
     #pylint: disable=C0103
     # These are standard abbreviations from Thermo-Calc for these quantities
-    energy = GM = property(lambda self: self.ast)
     entropy = SM = property(lambda self: -self.GM.diff(v.T))
     enthalpy = HM = property(lambda self: self.GM - v.T*self.GM.diff(v.T))
     heat_capacity = CPM = property(lambda self: -v.T*self.GM.diff(v.T, v.T))
@@ -438,15 +350,6 @@ class Model(object):
         Return True if the constituent_array contains only active species of the current Model instance.
         """
         if len(constituent_array) != len(self.constituents):
-            # Allow an exception for the ionic liquid model, where neutral
-            # species can be specified in the anion sublattice without any
-            # species in the cation sublattice.
-            ionic_liquid_2SL = self._dbe.phases[self.phase_name].model_hints.get('ionic_liquid_2SL', False)
-            if ionic_liquid_2SL and len(constituent_array) == 1:
-                param_sublattice = constituent_array[0]
-                model_anion_sublattice = self.constituents[1]
-                if (set(param_sublattice).issubset(model_anion_sublattice) or (param_sublattice[0] == v.Species('*'))):
-                    return True
             return False
         for param_sublattice, model_sublattice in zip(constituent_array, self.constituents):
             if not (set(param_sublattice).issubset(model_sublattice) or (param_sublattice[0] == v.Species('*'))):
@@ -538,41 +441,11 @@ class Model(object):
                         ]
                     mixing_term *= Add(*comp_symbols)
                 else:
-                    if (
-                        phase.model_hints.get('ionic_liquid_2SL', False) and  # This is an ionic 2SL
-                        len(param['constituent_array']) == 1 and  # There's only one sublattice
-                        all(const.charge == 0 for const in param['constituent_array'][0])  # All constituents are neutral
-                    ):
-                        # The constituent array is all neutral anion species in what would be the
-                        # second sublattice. TDB syntax allows for specifying neutral species with
-                        # one sublattice model. Set the sublattice index to 1 for the purpose of
-                        # site fractions.
-                        subl_index = 1
                     comp_symbols = \
                         [
                             v.SiteFraction(phase.name, subl_index, comp)
                             for comp in comps
                         ]
-                    if phase.model_hints.get('ionic_liquid_2SL', False):  # This is an ionic 2SL
-                        # We need to special case sorting for this model, because the constituents
-                        # should not be alphabetically sorted. The model should be (C)(A, Va, B)
-                        # for cations (C), anions (A), vacancies (Va) and neutrals (B). Thus the
-                        # second sublattice should be sorted by species with charge, then by
-                        # vacancies, if present, then by neutrals. Hint: in Thermo-Calc, using
-                        # `set-start-constitution` for a phase will prompt you to enter site
-                        # fractions for species in the order they are sorted internally within
-                        # Thermo-Calc. This can be used to verify sorting behavior.
-
-                        # Assume that the constituent array is already in sorted order
-                        # alphabetically, so we need to rearrange the species first by charged
-                        # species, then VA, then netural species. Since the cation sublattice
-                        # should only have charged species by definition, this is equivalent to
-                        # a no-op for the first sublattice.
-                        charged_symbols = [sitefrac for sitefrac in comp_symbols if sitefrac.species.charge != 0 and sitefrac.species.number_of_atoms > 0]
-                        va_symbols = [sitefrac for sitefrac in comp_symbols if sitefrac.species == v.Species('VA')]
-                        neutral_symbols = [sitefrac for sitefrac in comp_symbols if sitefrac.species.charge == 0 and sitefrac.species.number_of_atoms > 0]
-                        comp_symbols = charged_symbols + va_symbols + neutral_symbols
-
                     mixing_term *= Mul(*comp_symbols)
                 # is this a higher-order interaction parameter?
                 if len(comps) == 2 and param['parameter_order'] > 0:
@@ -623,28 +496,6 @@ class Model(object):
                     mixing_term *= comp_symbols[param['parameter_order']].subs(
                         self._Muggianu_correction_dict(comp_symbols),
                         simultaneous=True)
-            if phase.model_hints.get('ionic_liquid_2SL', False):
-                # Special normalization rules for parameters apply under this model
-                # If there are no anions present in the anion sublattice (only VA and neutral
-                # species), then the energy has an additional Q*y(VA) term
-                anions_present = any([m.species.charge < 0 for m in mixing_term.free_symbols])
-                if not anions_present:
-                    pair_rule = {}
-                    # Cation site fractions must always appear with vacancy site fractions
-                    va_subls = [(v.Species('VA') in phase.constituents[idx]) for idx in range(len(phase.constituents))]
-                    # The last index that contains a vacancy
-                    va_subl_idx = (len(phase.constituents) - 1) - va_subls[::-1].index(True)
-                    va_present = any((v.Species('VA') in c) for c in param['constituent_array'])
-                    if va_present and (max(len(c) for c in param['constituent_array']) == 1):
-                        # No need to apply pair rule for VA-containing endmember
-                        pass
-                    elif va_subl_idx > -1:
-                        for sym in mixing_term.free_symbols:
-                            if sym.species.charge > 0:
-                                pair_rule[sym] = sym * v.SiteFraction(sym.phase_name, va_subl_idx, v.Species('VA'))
-                    mixing_term = mixing_term.xreplace(pair_rule)
-                    # This parameter is normalized differently due to the variable charge valence of vacancies
-                    mixing_term *= self.site_ratios[va_subl_idx]
             param_val = param['parameter']
             if isinstance(param_val, Piecewise):
                 # Eliminate redundant Piecewise and extrapolate beyond temperature limits
@@ -1103,51 +954,3 @@ class Model(object):
             reference_contrib = Add(*terms)
             referenced_value = getattr(self, out) - reference_contrib
             setattr(self, fmt_str.format(out), referenced_value)
-
-
-class TestModel(Model):
-    """
-    Test Model object for global minimization.
-
-    Equation 15.2 in:
-    P.M. Pardalos, H.E. Romeijn (Eds.), Handbook of Global Optimization,
-    vol. 2. Kluwer Academic Publishers, Boston/Dordrecht/London (2002)
-
-    Parameters
-    ----------
-    dbf : Database
-        Ignored by TestModel but retained for API compatibility.
-    comps : sequence
-        Names of components to consider in the calculation.
-    phase : str
-        Name of phase model to build.
-    solution : sequence, optional
-        Float array locating the true minimum. Same length as 'comps'.
-        If not specified, randomly generated and saved to self.solution
-
-    Methods
-    -------
-    None yet.
-
-    Examples
-    --------
-    None yet.
-    """
-    def __init__(self, dbf, comps, phase, solution=None, kmax=None):
-        self.components = set(comps)
-        if 'VA' in self.components:
-            raise ValueError('Vacancies are unsupported in TestModel')
-        self.models = dict()
-        variables = [v.SiteFraction(phase.upper(), 0, x) for x in sorted(self.components)]
-        if solution is None:
-            solution = np.random.dirichlet(np.ones_like(variables, dtype=np.int))
-        self.solution = dict(list(zip(variables, solution)))
-        kmax = kmax if kmax is not None else 2
-        scale_factor = 1e4 * len(self.components)
-        ampl_scale = 1e3 * np.ones(kmax, dtype=np.float)
-        freq_scale = 10 * np.ones(kmax, dtype=np.float)
-        polys = Add(*[ampl_scale[i] * sin(freq_scale[i] * Add(*[Add(*[(varname - sol)**(j+1)
-                                                                      for varname, sol in self.solution.items()])
-                                                                for j in range(kmax)]))**2
-                      for i in range(kmax)])
-        self.models['test'] = scale_factor * Add(*[(varname - sol)**2 for varname, sol in self.solution.items()]) + polys

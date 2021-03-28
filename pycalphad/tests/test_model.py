@@ -1,7 +1,7 @@
 """
 The test_model module contains unit tests for the Model object.
 """
-from pycalphad import Database, Model, variables as v, equilibrium
+from pycalphad import Database, Model, ModelBase, variables as v, equilibrium
 from pycalphad.tests.datasets import ALCRNI_TDB, ALNIPT_TDB, ALFE_TDB, ZRO2_CUBIC_BCC_TDB, TDB_PARAMETER_FILTERS_TEST
 from pycalphad.core.errors import DofError
 import numpy as np
@@ -43,7 +43,7 @@ def test_export_import():
 
 def test_custom_model_contributions():
     "Building a custom model using contributions."
-    class CustomModel(Model):
+    class CustomModel(ModelBase):
         contributions = [('zzz', 'test'), ('xxx', 'test2'), ('yyy', 'test3')]
         def test(self, dbe):
             return 0

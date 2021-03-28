@@ -4,7 +4,7 @@ property surface of a system.
 """
 
 from pycalphad.codegen.callables import build_phase_records
-from pycalphad import ConditionError
+from pycalphad import ConditionError, ModelProtocol
 from pycalphad.core.utils import point_sample
 from pycalphad.core.utils import endmember_matrix, unpack_kwarg
 from pycalphad.core.utils import filter_phases, unpack_condition,\
@@ -62,13 +62,13 @@ def _generate_fake_points(components, statevar_dict, energy_limit, output, maxim
 
 
 @cacheit
-def _sample_phase_constitution(model, sampler, fixed_grid, pdens):
+def _sample_phase_constitution(model: ModelProtocol, sampler, fixed_grid, pdens):
     """
     Sample the internal degrees of freedom of a phase.
 
     Parameters
     ----------
-    model
+    model: ModelProtocol
     sampler
     fixed_grid
     pdens

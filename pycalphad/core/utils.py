@@ -404,10 +404,11 @@ def instantiate_models(dbf, comps, phases, model=None, parameters=None, symbols_
         Dictionary of Model instances corresponding to the passed phases.
     """
     from pycalphad import Model  # avoid cyclic imports
+    from pycalphad.models.base import ModelProtocol
     parameters = parameters if parameters is not None else {}
     if symbols_only:
         parameters, _ = extract_parameters(parameters)
-    if isinstance(model, Model):  # Check that this instance is compatible with phases
+    if isinstance(model, ModelProtocol):  # Check that this instance is compatible with phases
         if len(phases) > 1:
             raise ValueError("Cannot instantiate models for multiple phases ({}) using a Model instance ({}, phase: {})".format(phases, model, model.phase_name))
         else:
