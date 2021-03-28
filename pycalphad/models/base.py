@@ -78,6 +78,19 @@ class ModelBase(ModelProtocol):
     @abc.abstractmethod
     def __init__(self, dbf, comps, phase_name, parameters=None):
         """"""
+    def __eq__(self, other):
+        if self is other:
+            return True
+        elif type(self) != type(other):
+            return False
+        else:
+            return self.__dict__ == other.__dict__
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __hash__(self):
+        return hash(repr(self))
 
     @staticmethod
     def dispatches_on(phase_obj: 'Phase') -> bool:

@@ -124,7 +124,6 @@ class ModelRedlichKisterMuggianu(ModelBase):
         for name, value in self.models.items():
             self.models[name] = self.symbol_replace(value, symbols)
 
-
     @staticmethod
     def symbol_replace(obj, symbols):
         """
@@ -151,20 +150,6 @@ class ModelRedlichKisterMuggianu(ModelBase):
             # Can't use xreplace on a float
             pass
         return obj
-
-    def __eq__(self, other):
-        if self is other:
-            return True
-        elif type(self) != type(other):
-            return False
-        else:
-            return self.__dict__ == other.__dict__
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
-
-    def __hash__(self):
-        return hash(repr(self))
 
     def moles(self, species):
         "Number of moles of species or elements."
