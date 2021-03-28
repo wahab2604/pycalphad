@@ -2,6 +2,7 @@
 The test_model module contains unit tests for the Model object.
 """
 from pycalphad import Database, Model, ModelBase, variables as v, equilibrium
+from pycalphad.models import ModelRedlichKisterMuggianu
 from pycalphad.tests.datasets import ALCRNI_TDB, ALNIPT_TDB, ALFE_TDB, ZRO2_CUBIC_BCC_TDB, TDB_PARAMETER_FILTERS_TEST
 from pycalphad.core.errors import DofError
 import numpy as np
@@ -41,9 +42,17 @@ def test_export_import():
     ref_model = Model(ALNIPT_DBF, ['NI', 'PT', 'VA'], 'FCC_L12')
     assert test_model == ref_model
 
+
+# TODO: should this be the case for subclassing but not adding to the registry?
+# this technically still adds to the registry, but the class never gets
+# dispatched on.
 def test_custom_model_contributions():
     "Building a custom model using contributions."
-    class CustomModel(ModelBase):
+    class CustomModel(ModelRedlichKisterMuggianu):
+        # Model just for this test, don't dispatch on anything
+        @staticmethod
+        def dispatches_on(_):
+            return False
         contributions = [('zzz', 'test'), ('xxx', 'test2'), ('yyy', 'test3')]
         def test(self, dbe):
             return 0
