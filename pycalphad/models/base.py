@@ -10,8 +10,6 @@ from pycalphad import variables as v
 # other symbols
 _MAX_PARAM_NESTING = 32
 MODEL_REGISTRY = []  # all ModelBase subclasses go in here
-MODEL_EXTENSION_REGISTRY = []  # all ModelExtension subclasses go in here
-
 
 # TODO: document API
 class ModelProtocol(abc.ABC):
@@ -103,13 +101,6 @@ class ModelBase(ModelProtocol):
         return sum(self.models.values())
 
 
-class ModelExtension(abc.ABC):
-    """Base class for defining Model extensions (non-Gibbs energy methods and properties)"""
-    def __init_subclass__(cls, **kwargs):
-        if cls not in MODEL_EXTENSION_REGISTRY:
-            MODEL_EXTENSION_REGISTRY.append(cls)
-
-
 class Model:
     def __new__(cls, dbf, comps, phase_name, parameters=None):
         # Reverse order so that the last model registered (likely a user model)
@@ -117,18 +108,12 @@ class Model:
         for _Model in reversed(MODEL_REGISTRY):
             if _Model.dispatches_on(dbf.phases[phase_name.upper()]):
                 mod = _Model(dbf, comps, phase_name, parameters=parameters)
-                # Mixin all _Extension classes to the mod instance
-                for _Extension in MODEL_EXTENSION_REGISTRY:
-                    Model.extend_instance(mod, _Extension)
                 return mod
 
     def __init_subclass__(cls, **kwargs):
         msg = """
         Model objects cannot be subclassed directly.
         Custom Gibbs energy models should subclass ModelBase.
-        Custom property models and everything else should subclass
-        ModelExtension. If you want to inherit behavior of an existing model
-        or extension, you may subclass those directly.
         """
         msg = ' '.join(textwrap.dedent(msg).splitlines())
         raise TypeError(msg)
