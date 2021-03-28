@@ -1,10 +1,10 @@
 import itertools
-from collections import Counter
+from collections import Counter, OrderedDict
 from functools import partial
 from sympy import S, log, Piecewise, And
 from sympy import exp, log, Abs, Add, And, Float, Mul, Piecewise, Pow, S, sin, StrictGreaterThan, Symbol, zoo, oo, nan
 from tinydb import where
-from pycalphad.core.utils import unpack_components
+from pycalphad.core.utils import unpack_components, wrap_symbol
 from pycalphad import ModelBase
 from pycalphad.io.cs_dat import get_species
 from pycalphad.core.constraints import is_multiphase_constraint
@@ -32,9 +32,13 @@ class ModelMQMQA(ModelBase):
     ]
 
     def __init__(self, dbe, comps, phase_name, parameters=None):
-        # Here we do some custom initialization before calling
-        # `Model.__init__` via `super()`, which does the initialization and
-        # builds the phase as usual.
+        self._dbe = dbe
+        self._reference_model = None
+        self.components = set()
+        self.constituents = []
+        self.phase_name = phase_name.upper()
+        phase = dbe.phases[self.phase_name]
+        self.site_ratios = tuple(list(phase.sublattices))
 
         # build `constituents` here so we can build the pairs and quadruplets
         # *before* `super().__init__` calls `self.build_phase`. We leave it to
@@ -43,25 +47,51 @@ class ModelMQMQA(ModelBase):
         constituents = []
         for sublattice in dbe.phases[phase_name].constituents:
             sublattice_comps = set(sublattice).intersection(active_species)
+            self.components |= sublattice_comps
             constituents.append(sublattice_comps)
+        self.components = sorted(self.components)
 
         # create self.cations and self.anions properties to use instead of constituents
         self.cations = sorted(constituents[0])
         self.anions = sorted(constituents[1])
 
-        # Call Model.__init__, which will build the Gibbs energy from the contributions list.
-        super().__init__(dbe, comps, phase_name, parameters=parameters)
-
-        # In several places we use the assumption that the cation lattice and anion lattice have no common species
-        # we validate that assumption here
+        # In several places we use the assumption that the cation lattice and
+        # anion lattice have no common species; we validate that assumption here
         shared_species = set(self.cations).intersection(set(self.anions))
         assert len(shared_species) == 0, f"No species can be shared between the two MQMQA lattices, got {shared_species}"
 
-        # pycalphad now expects the `constituents` to refer to the constituents w.r.t. the Gibbs energy and internal DOF, not the phase constituents
-        # we fix that here.
         quads = itertools.product(itertools.combinations_with_replacement(self.cations, 2), itertools.combinations_with_replacement(self.anions, 2))
         quad_species = [get_species(A,B,X,Y) for (A, B), (X, Y) in quads]
         self.constituents = [sorted(quad_species)]
+
+        # Verify that this phase is still possible to build
+        if len(self.cations) == 0:
+            raise DofError(f'{self.phase_name}: Cation sublattice of {phase.constituents[0]} has no active species in {self.components}')
+        if len(self.anions) == 0:
+            raise DofError(f'{self.phase_name}: Anion sublattice of {phase.constituents[1]} has no active species in {self.components}')
+
+        # Convert string symbol names to sympy Symbol objects
+        # This makes xreplace work with the symbols dict
+        symbols = {Symbol(s): val for s, val in dbe.symbols.items()}
+
+        if parameters is not None:
+            self._parameters_arg = parameters
+            if isinstance(parameters, dict):
+                symbols.update([(wrap_symbol(s), val) for s, val in parameters.items()])
+            else:
+                # Lists of symbols that should remain symbolic
+                for s in parameters:
+                    symbols.pop(wrap_symbol(s))
+        else:
+            self._parameters_arg = None
+
+        self._symbols = {wrap_symbol(key): value for key, value in symbols.items()}
+
+        self.models = OrderedDict()
+        self.build_phase(dbe)
+
+        for name, value in self.models.items():
+            self.models[name] = self.symbol_replace(value, symbols)
 
     def _p(self, *ABXYs: v.Species) -> v.SiteFraction:
         """Shorthand for creating a site fraction object v.Y for a quadruplet.
@@ -638,3 +668,15 @@ class ModelMQMQA(ModelBase):
                     *(1-(ξ(A,X)/(w(X)*self.K_1_2(dbe,A,B))))**(exp-1)
 
         return X_ex/self.normalization
+
+    def build_phase(self, dbe):
+        """
+        Generate the symbolic form of all the contributions to this phase.
+
+        Parameters
+        ----------
+        dbe : Database
+        """
+        self.models.clear()
+        for key, value in self.__class__.contributions:
+            self.models[key] = S(getattr(self, value)(dbe))
