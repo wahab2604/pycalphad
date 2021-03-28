@@ -4,6 +4,7 @@ from functools import partial
 from sympy import S, log, Piecewise, And
 from sympy import exp, log, Abs, Add, And, Float, Mul, Piecewise, Pow, S, sin, StrictGreaterThan, Symbol, zoo, oo, nan
 from tinydb import where
+from .base import ModelBase, _MAX_PARAM_NESTING
 import pycalphad.variables as v
 from pycalphad.core.utils import unpack_components, wrap_symbol
 from pycalphad.core.constraints import is_multiphase_constraint
@@ -43,7 +44,7 @@ class ModelMQMQA(ModelBase):
     """
     @staticmethod
     def dispatches_on(phase_obj: 'pycalphad.io.database.Phase') -> bool:
-        return phase_obj.model_hints.get('mqmqa', False)
+        return phase_obj.model_hints.get('mqmqa') is not None
 
     contributions = [
         ('ref', 'traditional_reference_energy'),
@@ -250,7 +251,7 @@ class ModelMQMQA(ModelBase):
             assert species in anions
             return self.M(dbe, species)/sum(self.M(dbe, sp) for sp in anions)
 
-    def _calc_Z(self, dbe: Database, species, A, B, X, Y):
+    def _calc_Z(self, dbe: 'pycalphad.io.Database', species, A, B, X, Y):
         Z = partial(self.Z,  dbe)
 #         print(f'calculating $Z^{{{species}}}_{{{A} {B} {X} {Y}}}$')
         if (species == A) or (species == B):
@@ -302,7 +303,7 @@ class ModelMQMQA(ModelBase):
         raise ValueError("This should be unreachable")
 
 
-    def Z(self, dbe: Database, species: v.Species, A: v.Species, B: v.Species, X: v.Species, Y: v.Species):
+    def Z(self, dbe: 'pycalphad.io.Database', species: v.Species, A: v.Species, B: v.Species, X: v.Species, Y: v.Species):
         Zs = dbe._parameters.search(
             (where('phase_name') == self.phase_name) & \
             (where('parameter_type') == "Z") & \
@@ -695,8 +696,35 @@ class ModelMQMQA(ModelBase):
 
         Parameters
         ----------
-        dbe : Database
+        dbe : 'pycalphad.io.Database'
         """
         self.models.clear()
         for key, value in self.__class__.contributions:
             self.models[key] = S(getattr(self, value)(dbe))
+
+    @staticmethod
+    def symbol_replace(obj, symbols):
+        """
+        Substitute values of symbols into 'obj'.
+
+        Parameters
+        ----------
+        obj : SymPy object
+        symbols : dict mapping sympy.Symbol to SymPy object
+
+        Returns
+        -------
+        SymPy object
+        """
+        try:
+            # Need to do more substitutions to catch symbols that are functions
+            # of other symbols
+            for iteration in range(_MAX_PARAM_NESTING):
+                obj = obj.xreplace(symbols)
+                undefs = [x for x in obj.free_symbols if not isinstance(x, v.StateVariable)]
+                if len(undefs) == 0:
+                    break
+        except AttributeError:
+            # Can't use xreplace on a float
+            pass
+        return obj
