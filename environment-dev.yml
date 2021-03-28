@@ -15,7 +15,7 @@ dependencies:
   - matplotlib
   - numpy>=1.13
   - pyparsing
-  - python>=3.6
+  - python>=3.7
   - python-symengine=0.7.0
   - scipy
   # We don't import the C++ symengine library directly in pycalphad, but
