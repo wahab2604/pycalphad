@@ -4,10 +4,30 @@ from functools import partial
 from sympy import S, log, Piecewise, And
 from sympy import exp, log, Abs, Add, And, Float, Mul, Piecewise, Pow, S, sin, StrictGreaterThan, Symbol, zoo, oo, nan
 from tinydb import where
+import pycalphad.variables as v
 from pycalphad.core.utils import unpack_components, wrap_symbol
-from pycalphad import ModelBase
-from pycalphad.io.cs_dat import get_species
 from pycalphad.core.constraints import is_multiphase_constraint
+
+def get_species(*constituents: [(str, v.Species)]) -> v.Species:
+    """Return a Species for a pair or quadruplet given by constituents
+
+    Canonicalizes the Species by sorting among the A and X sublattices.
+
+    Examples
+    --------
+        get_species('A_1.0', 'B_1.0')
+    """
+    if all(isinstance(c, v.Species) for c in constituents):
+        # if everything is a species, get the string names as constituents
+        constituents = [c.name for c in constituents]
+    if len(constituents) == 4:
+        constituents = sorted(constituents[0:2]) + sorted(constituents[2:4])
+    name = ''.join(constituents)
+    constituent_dict = {}
+    # using get() will increment c instead of overriding if c is already defined
+    for c in constituents:
+        constituent_dict[c] = constituent_dict.get(c, 0.0) + 1.0
+    return v.Species(name, constituents=constituent_dict)
 
 
 # TODO: cleanup this class (style)

@@ -17,11 +17,10 @@ import re
 import numpy as np
 import itertools
 from dataclasses import dataclass
-from pycalphad import Database
 from collections import deque
 from sympy import S, log, Piecewise, And, integrate
-from pycalphad import variables as v
-from pycalphad.io.grammar import parse_chemical_formula
+from pycalphad import Database, variables as v
+from .grammar import parse_chemical_formula
 
 # From ChemApp Documentation, section 11.1 "The format of a ChemApp data-file"
 # We use a leading zero term because the data file's indices are 1-indexed and
@@ -545,28 +544,6 @@ class Phase_CEF(PhaseBase):
         # internally and this is thrown away by the parser currently.
         for excess_param in self.excess_parameters:
             excess_param.insert(dbf, self.phase_name, self.constituent_array, excess_coefficient_idxs)
-
-
-def get_species(*constituents: [(str, v.Species)]) -> v.Species:
-    """Return a Species for a pair or quadruplet given by constituents
-
-    Canonicalizes the Species by sorting among the A and X sublattices.
-
-    Examples
-    --------
-        get_species('A_1.0', 'B_1.0')
-    """
-    if all(isinstance(c, v.Species) for c in constituents):
-        # if everything is a species, get the string names as constituents
-        constituents = [c.name for c in constituents]
-    if len(constituents) == 4:
-        constituents = sorted(constituents[0:2]) + sorted(constituents[2:4])
-    name = ''.join(constituents)
-    constituent_dict = {}
-    # using get() will increment c instead of overriding if c is already defined
-    for c in constituents:
-        constituent_dict[c] = constituent_dict.get(c, 0.0) + 1.0
-    return v.Species(name, constituents=constituent_dict)
 
 
 def rename_element_charge(element, charge):
