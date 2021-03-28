@@ -5,12 +5,12 @@ from sympy import S, log, Piecewise, And
 from sympy import exp, log, Abs, Add, And, Float, Mul, Piecewise, Pow, S, sin, StrictGreaterThan, Symbol, zoo, oo, nan
 from tinydb import where
 from pycalphad.core.utils import unpack_components
-from pycalphad import Model
+from pycalphad import ModelBase
 from pycalphad.io.cs_dat import get_species
 from pycalphad.core.constraints import is_multiphase_constraint
 
 
-class ModelMQMQA(Model):
+class ModelMQMQA(ModelBase):
     """
 
     One peculiarity about the ModelMQMQA is that the charges in the way the
@@ -18,6 +18,9 @@ class ModelMQMQA(Model):
     whenever there is a charge.
 
     """
+    @staticmethod
+    def dispatches_on(phase_obj: 'pycalphad.io.database.Phase') -> bool:
+        return phase_obj.model_hints.get('mqmqa', False)
 
     contributions = [
         ('ref', 'traditional_reference_energy'),
