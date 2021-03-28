@@ -10,6 +10,9 @@ from pycalphad.io.cs_dat import get_species
 from pycalphad.core.constraints import is_multiphase_constraint
 
 
+# TODO: cleanup this class (style)
+# TODO: remove dead code (e.g. duplicate reference_energy)
+# TODO: document the model contributions with the mathematics
 class ModelMQMQA(ModelBase):
     """
 
