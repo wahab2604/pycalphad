@@ -8,10 +8,9 @@ from pyparsing import LineEnd, MatchFirst, OneOrMore, Optional, Regex, SkipTo
 from pyparsing import ZeroOrMore, Suppress, White, Word, alphanums, alphas, nums
 from pyparsing import delimitedList, ParseException
 import re
-from sympy import sympify, And, Or, Not, Intersection, Union, EmptySet, Interval, Piecewise
-from sympy import Symbol, GreaterThan, StrictGreaterThan, LessThan, StrictLessThan, Complement, S
-from sympy import Mul, Pow, Rational
-from sympy.abc import _clash
+import symengine
+import sympy
+from sympy import Intersection, Union, Complement
 from sympy.printing.str import StrPrinter
 from sympy.core.mul import _keep_coeff
 from sympy.printing.precedence import precedence
@@ -39,15 +38,6 @@ _AST_WHITELIST = [ast.Add, ast.BinOp, ast.Call, ast.Constant, ast.Div,
                   ast.Expression, ast.Load, ast.Mult, ast.Name, ast.Num,
                   ast.Pow, ast.Sub, ast.UAdd, ast.UnaryOp, ast.USub]
 
-# Avoid symbol names clashing with objects in sympy (gh-233)
-clashing_namespace = {}
-clashing_namespace.update(_clash)
-clashing_namespace['CC'] = Symbol('CC')
-clashing_namespace['FF'] = Symbol('FF')
-clashing_namespace['T'] = v.T
-clashing_namespace['P'] = v.P
-clashing_namespace['R'] = v.R
-
 
 def _sympify_string(math_string):
     "Convert math string into SymPy object."
@@ -71,8 +61,10 @@ def _sympify_string(math_string):
         if type(node) not in _AST_WHITELIST: #pylint: disable=W1504
             raise ValueError('Expression from TDB file not in whitelist: '
                              '{}'.format(expr_string))
-
-    return sympify(expr_string, locals=clashing_namespace)
+    # SymEngine can't handle leading plus signs in strings
+    if expr_string[0] == '+':
+        expr_string = expr_string[1:]
+    return symengine.sympify(expr_string)
 
 def _parse_action(func):
     """
@@ -125,8 +117,8 @@ def _make_piecewise_ast(toks):
     expr_cond_pairs = []
 
     # Only one token: Not a piecewise function; just return the AST
-    if len(toks) == 1:
-        return _sympify_string(toks[0].strip(' ,'))
+    if (len(toks) == 1) or (len(toks) == 2 and (toks[1] == '')):
+        return _sympify_string(str(toks[0]).strip(' ,'))
 
     while cur_tok < len(toks)-1:
         low_temp = toks[cur_tok]
@@ -140,19 +132,19 @@ def _make_piecewise_ast(toks):
             expr_cond_pairs.append(
                 (
                     _sympify_string(toks[cur_tok+1]),
-                    And(low_temp <= v.T)
+                    symengine.And(low_temp <= v.T)
                 )
             )
         else:
             expr_cond_pairs.append(
                 (
                     _sympify_string(toks[cur_tok+1]),
-                    And(low_temp <= v.T, v.T < high_temp)
+                    symengine.And(low_temp <= v.T, v.T < high_temp)
                 )
             )
         cur_tok = cur_tok + 2
     expr_cond_pairs.append((0, True))
-    return Piecewise(*expr_cond_pairs, evaluate=False)
+    return symengine.Piecewise(*expr_cond_pairs)
 
 class TCCommand(CaselessKeyword): #pylint: disable=R0903
     """
@@ -416,14 +408,14 @@ _TDB_PROCESSOR = {
 }
 
 def to_interval(relational):
-    if isinstance(relational, And):
+    if isinstance(relational, sympy.And):
         return Intersection(*[to_interval(i) for i in relational.args])
-    elif isinstance(relational, Or):
+    elif isinstance(relational, sympy.Or):
         return Union(*[to_interval(i) for i in relational.args])
-    elif isinstance(relational, Not):
+    elif isinstance(relational, sympy.Not):
         return Complement(*[to_interval(i) for i in relational.args])
-    if relational == S.true:
-        return Interval(S.NegativeInfinity, S.Infinity, left_open=True, right_open=True)
+    if relational == sympy.S.true:
+        return sympy.Interval(sympy.S.NegativeInfinity, sympy.S.Infinity, left_open=True, right_open=True)
 
     if len(relational.free_symbols) != 1:
         raise ValueError('Relational must only have one free symbol')
@@ -432,26 +424,26 @@ def to_interval(relational):
     free_symbol = list(relational.free_symbols)[0]
     lhs = relational.args[0]
     rhs = relational.args[1]
-    if isinstance(relational, GreaterThan):
+    if isinstance(relational, sympy.GreaterThan):
         if lhs == free_symbol:
-            return Interval(rhs, S.Infinity, left_open=False)
+            return sympy.Interval(rhs, sympy.S.Infinity, left_open=False)
         else:
-            return Interval(S.NegativeInfinity, rhs, right_open=False)
-    elif isinstance(relational, StrictGreaterThan):
+            return sympy.Interval(sympy.S.NegativeInfinity, rhs, right_open=False)
+    elif isinstance(relational, sympy.StrictGreaterThan):
         if lhs == free_symbol:
-            return Interval(rhs, S.Infinity, left_open=True)
+            return sympy.Interval(rhs, sympy.S.Infinity, left_open=True)
         else:
-            return Interval(S.NegativeInfinity, rhs, right_open=True)
-    elif isinstance(relational, LessThan):
+            return sympy.Interval(sympy.S.NegativeInfinity, rhs, right_open=True)
+    elif isinstance(relational, sympy.LessThan):
         if lhs != free_symbol:
-            return Interval(rhs, S.Infinity, left_open=False)
+            return sympy.Interval(rhs, sympy.S.Infinity, left_open=False)
         else:
-            return Interval(S.NegativeInfinity, rhs, right_open=False)
-    elif isinstance(relational, StrictLessThan):
+            return sympy.Interval(sympy.S.NegativeInfinity, rhs, right_open=False)
+    elif isinstance(relational, sympy.StrictLessThan):
         if lhs != free_symbol:
-            return Interval(rhs, S.Infinity, left_open=True)
+            return sympy.Interval(rhs, sympy.S.Infinity, left_open=True)
         else:
-            return Interval(S.NegativeInfinity, rhs, right_open=True)
+            return sympy.Interval(sympy.S.NegativeInfinity, rhs, right_open=True)
     else:
         raise ValueError('Unsupported Relational: {}'.format(relational.__class__.__name__))
 
@@ -461,17 +453,17 @@ class TCPrinter(StrPrinter):
     """
     def _print_Piecewise(self, expr):
         # Filter out default zeros since they are implicit in a TDB
-        filtered_args = [i for i in expr.args if not ((i.cond == S.true) and (i.expr == S.Zero))]
+        filtered_args = [i for i in expr.args if not ((i.cond == sympy.S.true) and (i.expr == sympy.S.Zero))]
         exprs = [self._print(arg.expr) for arg in filtered_args]
         # Only a small subset of piecewise functions can be represented
         # Need to verify that each cond's highlim equals the next cond's lowlim
         # to_interval() is used instead of sympy.Relational.as_set() for performance reasons
         intervals = [to_interval(i.cond) for i in filtered_args]
-        if (len(intervals) > 1) and not Intersection(*intervals) is EmptySet:
+        if (len(intervals) > 1) and not sympy.Intersection(*intervals) is sympy.EmptySet:
             raise ValueError('Overlapping intervals cannot be represented: {}'.format(intervals))
-        if not isinstance(Union(*intervals), Interval):
+        if not isinstance(Union(*intervals), sympy.Interval):
             raise ValueError('Piecewise intervals must be continuous')
-        if not all([arg.cond.free_symbols == {v.T} for arg in filtered_args]):
+        if not all([arg.cond.free_symbols == {sympy.sympify(v.T)} for arg in filtered_args]):
             raise ValueError('Only temperature-dependent piecewise conditions are supported')
         # Sort expressions based on intervals
         sortindices = [i[0] for i in sorted(enumerate(intervals), key=lambda x:x[1].start)]
@@ -509,24 +501,24 @@ class TCPrinter(StrPrinter):
             args = expr.as_ordered_factors()
         else:
             # use make_args in case expr was something like -x -> x
-            args = Mul.make_args(expr)
+            args = sympy.Mul.make_args(expr)
 
         # Gather args for numerator/denominator
         for item in args:
             if item.is_commutative and item.is_Pow and item.exp.is_Rational and item.exp.is_negative:
                 if item.exp != -1:
-                    b.append(Pow(item.base, -item.exp, evaluate=False))
+                    b.append(sympy.Pow(item.base, -item.exp, evaluate=False))
                 else:
-                    b.append(Pow(item.base, -item.exp))
-            elif item.is_Rational and item is not S.Infinity:
+                    b.append(sympy.Pow(item.base, -item.exp))
+            elif item.is_Rational and item is not sympy.S.Infinity:
                 if item.p != 1:
-                    a.append(Rational(item.p))
+                    a.append(sympy.Rational(item.p))
                 if item.q != 1:
-                    b.append(Rational(item.q))
+                    b.append(sympy.Rational(item.q))
             else:
                 a.append(item)
 
-        a = a or [S.One]
+        a = a or [sympy.S.One]
 
         a_str = [self.parenthesize(x, prec) for x in a]
         b_str = [self.parenthesize(x, prec) for x in b]
@@ -557,7 +549,7 @@ class TCPrinter(StrPrinter):
         return ","
 
     def _print_Symbol(self, expr):
-        if isinstance(expr, v.StateVariable):
+        if str(expr) in {str(x) for x in v.__dict__}:
             return expr.name
         else:
             # Thermo-Calc likes symbol references to be marked with a '#' at the end
@@ -657,10 +649,10 @@ def _apply_new_symbol_names(dbf, symbol_name_map):
     # first apply the rename to the keys
     dbf.symbols = {symbol_name_map.get(name, name): expr for name, expr in dbf.symbols.items()}
     # then propagate through to the symbol SymPy expression values
-    dbf.symbols = {name: S(expr).xreplace({Symbol(s): Symbol(v) for s, v in symbol_name_map.items()}) for name, expr in dbf.symbols.items()}
+    dbf.symbols = {name: symengine.S(expr).xreplace({symengine.Symbol(s): symengine.Symbol(v) for s, v in symbol_name_map.items()}) for name, expr in dbf.symbols.items()}
     # finally propagate through to the parameters
     for p in dbf._parameters.all():
-        dbf._parameters.update({'parameter': S(p['parameter']).xreplace({Symbol(s): Symbol(v) for s, v in symbol_name_map.items()})}, doc_ids=[p.doc_id])
+        dbf._parameters.update({'parameter': symengine.S(p['parameter']).xreplace({symengine.Symbol(s): symengine.Symbol(v) for s, v in symbol_name_map.items()})}, doc_ids=[p.doc_id])
 
 
 def write_tdb(dbf, fd, groupby='subsystem', if_incompatible='warn'):
@@ -762,10 +754,12 @@ def write_tdb(dbf, fd, groupby='subsystem', if_incompatible='warn'):
         output += "\n"
     # Write FUNCTION block
     for name, expr in sorted(dbf.symbols.items()):
-        if not isinstance(expr, Piecewise):
+        if not isinstance(expr, symengine.Piecewise):
             # Non-piecewise exprs need to be wrapped to print
             # Otherwise TC's TDB parser will complain
-            expr = Piecewise((expr, And(v.T >= 1, v.T < 10000)))
+            expr = symengine.Piecewise((expr, symengine.And(v.T >= 1, v.T < 10000)))
+        # Convert SymEngine object to SymPy for printer compatibility
+        expr = sympy.sympify(expr)
         expr = TCPrinter().doprint(expr).upper()
         if ';' not in expr:
             expr += '; N'
@@ -864,10 +858,12 @@ def write_tdb(dbf, fd, groupby='subsystem', if_incompatible='warn'):
                          for subl in param_to_write.constituent_array])
         # TODO: Handle references
         paramx = param_to_write.parameter
-        if not isinstance(paramx, Piecewise):
+        if not isinstance(paramx, symengine.Piecewise):
             # Non-piecewise parameters need to be wrapped to print correctly
             # Otherwise TC's TDB parser will fail
-            paramx = Piecewise((paramx, And(v.T >= 1, v.T < 10000)))
+            paramx = symengine.Piecewise((paramx, symengine.And(v.T >= 1, v.T < 10000)))
+        # Convert SymEngine object to SymPy for printer compatibility
+        paramx = sympy.sympify(paramx)
         exprx = TCPrinter().doprint(paramx).upper()
         if ';' not in exprx:
             exprx += '; N'

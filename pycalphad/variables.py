@@ -3,8 +3,7 @@
 Classes and constants for representing thermodynamic variables.
 """
 
-import sys
-from sympy import Float, Symbol
+from symengine import Float, Symbol
 from pycalphad.io.grammar import parse_chemical_formula
 
 
@@ -115,6 +114,19 @@ class StateVariable(Symbol):
     def __new__(cls, name, *args, **assumptions):
         return Symbol.__new__(cls, name.upper(), real=True, **assumptions)
 
+    def __eq__(self, other):
+        if self is other:
+            return True
+        elif type(self) != type(other):
+            return False
+        elif self.name != other.name:
+            return False
+        return True
+
+    def __hash__(self):
+        return hash(self.name)
+
+
 class SiteFraction(StateVariable):
     """
     Site fractions are symbols with built-in assumptions of being real
@@ -207,6 +219,10 @@ class MoleFraction(StateVariable):
                 '}_{'+self.species.escaped_name+'}'
         else:
             return 'x_{'+self.species.escaped_name+'}'
+
+    def __str__(self):
+        "String representation."
+        return 'X_%s' % self.species.name
 
 
 class MassFraction(StateVariable):

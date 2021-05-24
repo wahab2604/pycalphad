@@ -213,6 +213,7 @@ def equilibrium(dbf, comps, phases, conditions, output=None, model=None,
     # Temporary solution until constraint system improves
     if conditions.get(v.N) is None:
         conditions[v.N] = 1
+    print(conditions)
     if np.any(np.array(conditions[v.N]) != 1):
         raise ConditionError('N!=1 is not yet supported, got N={}'.format(conditions[v.N]))
     # Modify conditions values to be within numerical limits, e.g., X(AL)=0
