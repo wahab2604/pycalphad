@@ -663,7 +663,7 @@ def _apply_new_symbol_names(dbf, symbol_name_map):
         dbf._parameters.update({'parameter': S(p['parameter']).xreplace({Symbol(s): Symbol(v) for s, v in symbol_name_map.items()})}, doc_ids=[p.doc_id])
 
 
-def write_tdb(dbf, fd, groupby='subsystem', if_incompatible='warn'):
+def write_tdb(dbf, fd, groupby='subsystem', if_incompatible='warn',maxlen=78):
     """
     Write a TDB file from a pycalphad Database object.
 
@@ -719,7 +719,7 @@ def write_tdb(dbf, fd, groupby='subsystem', if_incompatible='warn'):
             warnings.warn('Ignoring that the following function names are beyond the 8 character TDB limit: {}. Use the keyword argument \'if_incompatible\' to control this behavior.'.format(long_function_names))
     # Begin constructing the written database
     writetime = datetime.datetime.now()
-    maxlen = 78
+    maxlen = maxlen
     output = ""
     # Comment header block
     # Import here to prevent circular imports
